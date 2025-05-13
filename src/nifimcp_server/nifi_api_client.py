@@ -456,16 +456,122 @@ class NiFiApiClient:
         # Type assertion needed because _make_request has a broad return type
         return result # type: ignore
 
-    # ... (rest of the stubs remain for create/update/delete PG) ...
-    async def create_process_group(self, parent_id: str, pg_entity: ProcessGroupEntity) -> Optional[ProcessGroupEntity]:
-        nifi_client_logger.warning("create_process_group is a stub and not yet implemented.")
-        return None
-    async def update_process_group(self, pg_id: str, pg_entity: ProcessGroupEntity) -> Optional[ProcessGroupEntity]:
-        nifi_client_logger.warning("update_process_group is a stub and not yet implemented.")
-        return None
-    async def delete_process_group(self, pg_id: str, revision: RevisionDTO, disconnected_node_acknowledged: bool = False) -> Optional[ProcessGroupEntity]:
-        nifi_client_logger.warning("delete_process_group is a stub and not yet implemented.")
-        return None
+    # ... (get_process_group method is already implemented) ...
+
+    async def create_process_group(
+        self,
+        parent_id: str,
+        pg_entity_payload: ProcessGroupEntity,
+        parameter_context_handling_strategy: Optional[str] = None
+    ) -> ProcessGroupEntity:
+        """
+        Creates a new process group within the specified parent group.
+        Corresponds to POST /process-groups/{parentId}/process-groups.
+
+        Args:
+            parent_id: The ID of the parent process group.
+            pg_entity_payload: The ProcessGroupEntity payload for creation.
+                               Must include revision (version 0) and component details.
+            parameter_context_handling_strategy: Optional strategy for handling parameter contexts.
+
+        Returns:
+            The created ProcessGroupEntity.
+
+        Raises:
+            NiFiApiException: For API errors.
+        """
+        path = f"process-groups/{parent_id}/process-groups"
+        params: Dict[str, Any] = {}
+        if parameter_context_handling_strategy:
+            params["parameterContextHandlingStrategy"] = parameter_context_handling_strategy
+        
+        nifi_client_logger.debug(f"Attempting POST {path} for parent {parent_id}")
+        result = await self._make_request(
+            method="POST",
+            path=path,
+            json_body=pg_entity_payload,
+            params=params if params else None,
+            response_model=ProcessGroupEntity
+        )
+        if not isinstance(result, ProcessGroupEntity):
+            raise NiFiApiException(0, "Failed to create process group or parse response correctly.")
+        nifi_client_logger.info(f"Successfully created Process Group '{result.component.name if result.component else 'N/A'}' with ID {result.id} in parent {parent_id}")
+        return result
+
+    async def update_process_group(
+        self,
+        pg_id: str,
+        pg_entity_payload: ProcessGroupEntity
+    ) -> ProcessGroupEntity:
+        """
+        Updates an existing process group.
+        Corresponds to PUT /process-groups/{id}.
+
+        Args:
+            pg_id: The ID of the process group to update.
+            pg_entity_payload: The ProcessGroupEntity payload with updates.
+                               Must include the correct revision.
+
+        Returns:
+            The updated ProcessGroupEntity.
+
+        Raises:
+            NiFiApiException: For API errors (e.g., 409 if revision is stale).
+        """
+        path = f"process-groups/{pg_id}"
+        nifi_client_logger.debug(f"Attempting PUT {path} for process group {pg_id}")
+        result = await self._make_request(
+            method="PUT",
+            path=path,
+            json_body=pg_entity_payload,
+            response_model=ProcessGroupEntity
+        )
+        if not isinstance(result, ProcessGroupEntity):
+            raise NiFiApiException(0, "Failed to update process group or parse response correctly.")
+        nifi_client_logger.info(f"Successfully updated Process Group ID {pg_id}")
+        return result
+
+    async def delete_process_group(
+        self,
+        pg_id: str,
+        version: str, # NiFi docs show version as string in query
+        client_id: Optional[str] = None,
+        disconnected_node_acknowledged: Optional[bool] = False
+    ) -> ProcessGroupEntity:
+        """
+        Deletes a process group.
+        Corresponds to DELETE /process-groups/{id}.
+
+        Args:
+            pg_id: The ID of the process group to delete.
+            version: The revision version string.
+            client_id: Optional client ID for the revision.
+            disconnected_node_acknowledged: Optional flag.
+
+        Returns:
+            The deleted ProcessGroupEntity.
+
+        Raises:
+            NiFiApiException: For API errors.
+        """
+        path = f"process-groups/{pg_id}"
+        params: Dict[str, Any] = {"version": version}
+        if client_id:
+            params["clientId"] = client_id
+        if disconnected_node_acknowledged is not None: # Check for None explicitly
+            params["disconnectedNodeAcknowledged"] = str(disconnected_node_acknowledged).lower()
+
+        nifi_client_logger.debug(f"Attempting DELETE {path} for process group {pg_id} with params {params}")
+        result = await self._make_request(
+            method="DELETE",
+            path=path,
+            params=params,
+            response_model=ProcessGroupEntity
+        )
+        if not isinstance(result, ProcessGroupEntity):
+            raise NiFiApiException(0, "Failed to delete process group or parse response correctly.")
+        nifi_client_logger.info(f"Successfully deleted Process Group ID {pg_id}")
+        return result
 
     # --- Processor methods (Section 3.3) ---
     async def get_processor(self, processor_id: str) -> Optional[ProcessorEntity]:
