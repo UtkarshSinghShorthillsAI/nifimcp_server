@@ -19,11 +19,19 @@ from .nifi_models import (
     NiFiApiException,
     AuthenticationConfigurationEntity,
     ProcessGroupEntity,
-    ProcessorEntity,
+    ProcessorEntity, 
+    ProcessorStatusDTO, 
+    ProcessorRunStatusEntity,
     ConnectionEntity,
     PortEntity,
     RevisionDTO,
-    # Import other DTOs/Entities as needed when implementing specific methods
+    # For other processor endpoints, to be added as needed
+    ConfigurationAnalysisEntity,
+    ComponentStateEntity,
+    PropertyDescriptorEntity,
+    VerifyConfigRequestEntity,
+    ProcessorsRunStatusDetailsEntity,
+    RunStatusDetailsRequestEntity,
 )
 
 # Initialize a logger for this module
@@ -67,75 +75,50 @@ class NiFiApiClient:
         existing_token: Optional[str] = None,
         # Allow passing a pre-configured client, useful for testing or custom configs
         external_httpx_client: Optional[httpx.AsyncClient] = None,
-        ssl_verify: bool = True # <<< ADDED ssl_verify parameter
+        ssl_verify: bool = True
     ) -> "NiFiApiClient":
         """
         Factory method to create and authenticate a NiFiApiClient instance.
-
-        Args:
-            base_url: The base URL of the NiFi API.
-            username: NiFi username for authentication.
-            password: NiFi password for authentication.
-            existing_token: An optional, pre-existing JWT.
-            external_httpx_client: An optional, pre-configured httpx.AsyncClient.
-            ssl_verify: If False, disables SSL certificate verification. Defaults to True.
-
-        Returns:
-            An initialized NiFiApiClient instance.
-
-        Raises:
-            NiFiAuthException: If authentication fails.
-            ValueError: If insufficient credentials are provided.
         """
-        # Configuration for the httpx client instance(s)
-        httpx_client_config = {"verify": False}
+        httpx_client_config = {"verify": ssl_verify}
         if not ssl_verify:
              nifi_client_logger.warning("SSL certificate verification is DISABLED for NiFi API client.")
 
         token: Optional[str] = None
-        temp_auth_client_created = False # Flag to track if we created a temporary client
+        temp_auth_client_created = False
 
         if existing_token:
             token = existing_token
             nifi_client_logger.info("Using existing token for NiFi API client.")
         elif username and password:
-            # Determine which client to use for the auth call
             auth_client = external_httpx_client
             if not auth_client:
-                 # Create a new temporary client *with* the verify setting for the auth call
                  auth_client = httpx.AsyncClient(**httpx_client_config)
-                 temp_auth_client_created = True # Mark that we created it
+                 temp_auth_client_created = True
 
             try:
-                # Create a temporary NiFiApiClient instance just for the auth call,
-                # passing the correctly configured httpx client
-                temp_api_instance_for_auth = cls(base_url, auth_client) # Pass auth_client
+                temp_api_instance_for_auth = cls(base_url, auth_client)
                 token = await temp_api_instance_for_auth._authenticate(username, password)
                 nifi_client_logger.info(f"Successfully authenticated user '{username}' with NiFi.")
             except NiFiAuthException:
                 nifi_client_logger.error(f"NiFi authentication failed for user '{username}'.")
-                raise # Re-raise the specific auth exception
+                raise
             finally:
-                # Close the temporary client *only if* we created it here
                 if temp_auth_client_created and auth_client:
                     await auth_client.aclose()
         else:
             raise ValueError("Either username/password or an existing token must be provided for NiFiApiClient.")
 
-        # Determine the final httpx client for the actual NiFiApiClient instance
-        # If an external one was provided, use it. Otherwise, create a new one with config.
         instance_httpx_client = external_httpx_client
         if not instance_httpx_client:
             instance_httpx_client = httpx.AsyncClient(**httpx_client_config)
 
-        # Create the final NiFiApiClient instance
         return cls(base_url, instance_httpx_client, token)
 
 
     async def close(self):
         """
         Closes the underlying HTTP client.
-        This should be called when the NiFiApiClient is no longer needed.
         """
         if self._httpx_client and not self._httpx_client.is_closed:
             await self._httpx_client.aclose()
@@ -144,28 +127,14 @@ class NiFiApiClient:
     async def _authenticate(self, username: str, password: str) -> str:
         """
         Authenticates with NiFi using username and password to obtain a JWT.
-
-        Args:
-            username: The NiFi username.
-            password: The NiFi password.
-
-        Returns:
-            The JWT access token as a string.
-
-        Raises:
-            NiFiAuthException: If authentication fails.
         """
         auth_url = f"{self._base_url.strip('/')}/access/token"
         data = {"username": username, "password": password}
-        # User-Agent is added automatically by _make_request or directly in the httpx call here
         headers = {"Content-Type": "application/x-www-form-urlencoded", "User-Agent": self._user_agent}
-
         nifi_client_logger.debug(f"Attempting NiFi authentication for user '{username}' at {auth_url}.")
         try:
-            # Use the client passed during initialization (which has verify setting)
             response = await self._httpx_client.post(auth_url, data=data, headers=headers)
-
-            if response.status_code == 201: # NiFi spec: "Success = 201"
+            if response.status_code == 201:
                 token = response.text
                 if not token:
                     raise NiFiAuthException("Authentication successful but no token received.")
@@ -179,18 +148,11 @@ class NiFiApiClient:
         except httpx.RequestError as e:
             error_message = f"HTTP request error during NiFi authentication: {e}"
             nifi_client_logger.error(error_message)
-            # Wrap HTTP errors in NiFiAuthException specifically for auth step
             raise NiFiAuthException(error_message) from e
 
     def _get_auth_header(self) -> Dict[str, str]:
         """
-        Constructs the Authorization header if a token is available.
-
-        Returns:
-            A dictionary containing the Authorization header.
-
-        Raises:
-            NiFiAuthException: If no token is available.
+        Constructs the Authorization header.
         """
         if not self._token:
             raise NiFiAuthException("No authentication token available. Please authenticate first.")
@@ -202,261 +164,109 @@ class NiFiApiClient:
         path: str,
         params: Optional[Dict[str, Any]] = None,
         json_body: Optional[Union[BaseModel, Dict[str, Any]]] = None,
-        data_body: Optional[Dict[str, str]] = None, # For form-urlencoded data
+        data_body: Optional[Dict[str, str]] = None,
         response_model: Optional[Type[ResponseType]] = None,
-        expect_json_response: bool = True, # Most NiFi responses are JSON
-        allow_404: bool = False, # Controls if 404 raises NiFiApiException
+        expect_json_response: bool = True,
+        allow_404: bool = False,
         extra_headers: Optional[Dict[str, str]] = None
     ) -> Optional[Union[ResponseType, str, bytes, httpx.Response]]:
         """
-        Makes an HTTP request to the NiFi API using the configured httpx client.
-
-        Args:
-            method: HTTP method (GET, POST, PUT, DELETE).
-            path: API endpoint path (relative to base_url).
-            params: URL query parameters.
-            json_body: Pydantic model or dict for JSON request body.
-            data_body: Dict for x-www-form-urlencoded request body.
-            response_model: Pydantic model to parse the JSON response into.
-            expect_json_response: Whether to expect a JSON response.
-            allow_404: If True and a 404 is received, returns None instead of raising NiFiApiException.
-            extra_headers: Additional headers to include in the request.
-
-        Returns:
-            Parsed Pydantic model, raw text/bytes, httpx.Response, or None if allow_404=True and 404 is received.
-
-        Raises:
-            NiFiApiException: For non-2xx responses (unless allow_404 handles it) or Pydantic validation errors.
-            NiFiAuthException: If authentication is required but no token is set (handled by _get_auth_header).
+        Makes an HTTP request to the NiFi API.
         """
         full_url = f"{self._base_url.strip('/')}/{path.lstrip('/')}"
-
-        # Determine if auth header is needed (all paths except access/token)
         headers = {}
-        if path != "access/token":
+        if path != "access/token": # Path for auth token request itself should not have Bearer token
             try:
                  headers.update(self._get_auth_header())
             except NiFiAuthException as e:
-                 # If auth is required but not available, re-raise immediately
                  raise NiFiApiException(status_code=401, message=str(e)) from e
 
         headers["User-Agent"] = self._user_agent
         if extra_headers:
             headers.update(extra_headers)
 
-        # Prepare request body
         json_payload: Optional[Dict[str, Any]] = None
         if json_body:
             if isinstance(json_body, BaseModel):
-                # Use by_alias for correct field names (e.g., clientId)
-                # Use exclude_none to only send provided fields
                 json_payload = json_body.model_dump(by_alias=True, exclude_none=True)
             else:
                 json_payload = json_body
-            # Set content type only if we actually have a json body
             headers["Content-Type"] = "application/json"
 
         nifi_client_logger.debug(f"Making NiFi API request: {method} {full_url}")
         nifi_client_logger.debug(f"Params: {params}, JSON Body: {json_payload}, Data Body: {data_body}")
 
         try:
-            # The self._httpx_client instance already has the verify setting configured
             response = await self._httpx_client.request(
-                method,
-                full_url,
-                params=params,
-                json=json_payload,
-                data=data_body,
-                headers=headers,
-                # Timeout can be configured on the client itself, or per-request
-                # timeout=httpx.Timeout(10.0, connect=5.0) # Example per-request timeout
+                method, full_url, params=params, json=json_payload, data=data_body, headers=headers
             )
-
             nifi_client_logger.debug(f"NiFi API response: {response.status_code} {response.request.url}")
 
-            # Check for successful status codes (2xx)
             if 200 <= response.status_code < 300:
                 if not expect_json_response:
-                    # Handle non-JSON responses
-                    if response_model is str:
-                        return response.text
-                    elif response_model is bytes:
-                        return response.content
-                    # Return raw response if no specific parsing is needed
+                    if response_model is str: return response.text
+                    elif response_model is bytes: return response.content
                     return response
-
-                # Handle successful JSON responses
-                if response.status_code == 204: # No Content
-                    return None
-
+                if response.status_code == 204: return None # No Content
                 try:
-                    # Handle cases where response might be empty but status is 200/201 etc.
-                    if not response.content:
+                    if not response.content: # Handle empty body on success
                         if response_model:
-                             # If a model was expected, but no content, raise error or return None?
-                             # Returning None seems safer if model fields aren't all Optional.
                              nifi_client_logger.warning(f"Received status {response.status_code} but no content for {method} {full_url}. Expecting {response_model}.")
                              return None
-                        else:
-                             return {} # Return empty dict if no model expected and no content
-
+                        else: return {}
                     response_json = response.json()
                     if response_model:
-                        # Validate and parse using the provided Pydantic model
                         return response_model.model_validate(response_json)
-                    # Return raw dict if no Pydantic model was specified
                     return response_json
-                except (ValueError, ValidationError) as e: # Catches JSONDecodeError and Pydantic errors
+                except (ValueError, ValidationError) as e: # JSONDecodeError is a subclass of ValueError
                     nifi_client_logger.error(f"Failed to parse or validate NiFi API JSON response: {e}. Response text: {response.text[:500]}")
                     raise NiFiApiException(response.status_code, f"Invalid JSON response: {e}", response.text) from e
-
-            # Handle allowed 404
             elif response.status_code == 404 and allow_404:
                 nifi_client_logger.info(f"Resource not found (404) but allowed: {method} {full_url}")
                 return None
-            # Handle other error status codes
-            else:
+            else: # Other errors
                 error_message = f"NiFi API request failed. URL: {full_url}, Status: {response.status_code}"
-                try:
-                    # NiFi often returns plain text errors
-                    details = response.text
-                    error_message += f". Details: {details[:500]}" # Limit detail length
-                except Exception:
-                    pass # Ignore if details can't be read
+                try: details = response.text; error_message += f". Details: {details[:500]}"
+                except Exception: pass
                 nifi_client_logger.error(error_message)
-                # Raise custom exception with details
                 raise NiFiApiException(response.status_code, error_message, response_text=response.text)
-
-        except httpx.RequestError as e:
-            # Handle network-level errors (connection refused, DNS errors, timeouts)
+        except httpx.RequestError as e: # Network-level errors
             error_message = f"HTTP request error encountered for {method} {full_url}: {e}"
             nifi_client_logger.error(error_message)
-            # Use status_code=0 or similar to indicate non-HTTP error
             raise NiFiApiException(status_code=0, message=error_message) from e
 
-    # --- Authentication Endpoints (Section 3.1) ---
-
+    # --- Authentication Endpoints ---
     async def get_nifi_authentication_configuration(self) -> AuthenticationConfigurationEntity:
-        """
-        Retrieves the server’s login and logout URIs and whether external login is required.
-        Corresponds to GET /authentication/configuration.
-        """
-        # Type ignore because _make_request can return None, but this specific endpoint
-        # should always return the entity or raise an exception on error.
-        result = await self._make_request(
-            method="GET",
-            path="authentication/configuration",
-            response_model=AuthenticationConfigurationEntity
-        )
-        if result is None:
-            # This case implies a 204 No Content which shouldn't happen for this endpoint
-             raise NiFiApiException(204, "Received unexpected No Content response for /authentication/configuration")
-        return result # type: ignore
+        """Retrieves the server’s login and logout URIs."""
+        result = await self._make_request("GET", "authentication/configuration", response_model=AuthenticationConfigurationEntity)
+        if not isinstance(result, AuthenticationConfigurationEntity): 
+            raise NiFiApiException(0, "Invalid response for get_nifi_authentication_configuration, expected AuthenticationConfigurationEntity")
+        return result
 
     async def logout_nifi_session(self) -> None:
-        """
-        Invalidates the current JWT.
-        Corresponds to DELETE /access/logout.
-        """
-        await self._make_request(
-            method="DELETE",
-            path="access/logout",
-            expect_json_response=False # NiFi doc says 200, implies no body or plain text.
-        )
-        self._token = None # Clear local token after successful logout call
+        """Invalidates the current JWT."""
+        await self._make_request("DELETE", "access/logout", expect_json_response=False)
+        self._token = None
         nifi_client_logger.info("Successfully logged out NiFi session.")
 
     async def complete_nifi_logout(self) -> httpx.Response:
-        """
-        Final redirect step for browser logouts; safe no-body call for API clients.
-        Corresponds to GET /access/logout/complete.
-        Returns the raw httpx.Response object to allow handling of the 302 redirect if needed.
-        """
-        response_or_none = await self._make_request(
-            method="GET",
-            path="access/logout/complete",
-            expect_json_response=False # Expecting 302 redirect
-        )
-        if response_or_none and isinstance(response_or_none, httpx.Response):
-            # The make_request should have already validated 2xx/3xx status
-            # If it's 302, it should return the response object
-            if response_or_none.status_code == 302:
-                nifi_client_logger.info("Logout complete call successful (302).")
-                return response_or_none
-            else:
-                 # If make_request returned a response but not 302 (unexpected)
-                 nifi_client_logger.warning(f"Logout complete call returned unexpected status: {response_or_none.status_code}")
-                 raise NiFiApiException(response_or_none.status_code, f"Unexpected status from /access/logout/complete: {response_or_none.status_code}", response_or_none.text)
-        else:
-             # Should not happen if _make_request is correct and didn't raise an error for non-2xx/3xx
-             raise NiFiApiException(0, "Unexpected error during complete_nifi_logout: _make_request returned None or non-Response")
-        # --- Authentication Endpoints (Section 3.1) ---
+        """Final redirect step for browser logouts."""
+        response = await self._make_request("GET", "access/logout/complete", expect_json_response=False)
+        if not isinstance(response, httpx.Response): 
+            raise NiFiApiException(0, "Expected httpx.Response for complete_nifi_logout")
+        # NiFi usually redirects (302), but other success codes might be possible or indicate issues.
+        if response.status_code != 302:
+             nifi_client_logger.warning(f"Logout complete call returned unexpected status: {response.status_code}")
+        return response
 
-    # ... (existing get_nifi_authentication_configuration, logout_nifi_session, complete_nifi_logout) ...
-
-    # Method we are adding now:
-    async def get_nifi_authentication_configuration(self) -> AuthenticationConfigurationEntity:
-        """
-        Retrieves the server’s login and logout URIs and whether external login is required.
-        Corresponds to GET /authentication/configuration. Requires prior authentication.
-        """
-        nifi_client_logger.debug("Attempting GET /authentication/configuration")
-        # This endpoint requires authentication, so _make_request will use the stored token.
-        result = await self._make_request(
-            method="GET",
-            path="authentication/configuration",
-            response_model=AuthenticationConfigurationEntity,
-            expect_json_response=True # Expecting JSON response
-        )
-        if not isinstance(result, AuthenticationConfigurationEntity):
-            # This can happen if _make_request returns None (e.g., 204 or unexpected non-JSON)
-            # or if the response parsing failed in a way not caught earlier.
-            # Based on NiFi docs, this endpoint should always return the entity on success.
-            raise NiFiApiException(
-                status_code=response.status_code if 'response' in locals() and response else 0,
-                message="Failed to get valid AuthenticationConfigurationEntity from API"
-            )
-        return result
-
-    # --- Placeholder Stubs for Other Essential Endpoints ---
-    # ... (rest of the stubs remain) ...
-
-    # --- Placeholder Stubs for Other Essential Endpoints ---
-    # These will be implemented iteratively later.
-
-    # --- Process Group methods (Section 3.2) ---
-    # Inside NiFiApiClient class in nifi_api_client.py
-
-    # --- Process Group methods (Section 3.2) ---
+    # --- Process Group methods ---
     async def get_process_group(self, pg_id: str) -> Optional[ProcessGroupEntity]:
-        """
-        Gets a process group by its ID.
-        Corresponds to GET /process-groups/{id}.
-
-        Args:
-            pg_id: The ID of the process group to retrieve.
-
-        Returns:
-            A ProcessGroupEntity if found, None if a 404 is received.
-
-        Raises:
-            NiFiApiException: For non-200/404 status codes or other API errors.
-        """
-        nifi_client_logger.debug(f"Attempting GET /process-groups/{pg_id}")
-        result = await self._make_request(
-            method="GET",
-            path=f"process-groups/{pg_id}",
-            response_model=ProcessGroupEntity,
-            allow_404=True # A 404 ("Not Found") is a valid response here
-        )
-        if result is None and not isinstance(result, ProcessGroupEntity): # Check if it was a 404 or other issue
-             nifi_client_logger.warning(f"Process Group with ID {pg_id} not found (404) or invalid response.")
-             return None # Explicitly return None on 404 or parse failure when allow_404=True
-        nifi_client_logger.info(f"Successfully retrieved Process Group details for ID {pg_id}")
-        # Type assertion needed because _make_request has a broad return type
-        return result # type: ignore
-
-    # ... (get_process_group method is already implemented) ...
+        """Gets a process group by its ID."""
+        result = await self._make_request("GET", f"process-groups/{pg_id}", response_model=ProcessGroupEntity, allow_404=True)
+        if result is None: return None # Handles 404 if allow_404 is True
+        if not isinstance(result, ProcessGroupEntity): 
+            raise NiFiApiException(0, "Invalid response type for get_process_group, expected ProcessGroupEntity")
+        return result
 
     async def create_process_group(
         self,
@@ -464,30 +274,14 @@ class NiFiApiClient:
         pg_entity_payload: ProcessGroupEntity,
         parameter_context_handling_strategy: Optional[str] = None
     ) -> ProcessGroupEntity:
-        """
-        Creates a new process group within the specified parent group.
-        Corresponds to POST /process-groups/{parentId}/process-groups.
-
-        Args:
-            parent_id: The ID of the parent process group.
-            pg_entity_payload: The ProcessGroupEntity payload for creation.
-                               Must include revision (version 0) and component details.
-            parameter_context_handling_strategy: Optional strategy for handling parameter contexts.
-
-        Returns:
-            The created ProcessGroupEntity.
-
-        Raises:
-            NiFiApiException: For API errors.
-        """
+        """Creates a new process group."""
         path = f"process-groups/{parent_id}/process-groups"
         params: Dict[str, Any] = {}
         if parameter_context_handling_strategy:
             params["parameterContextHandlingStrategy"] = parameter_context_handling_strategy
         
-        nifi_client_logger.debug(f"Attempting POST {path} for parent {parent_id}")
         result = await self._make_request(
-            method="POST",
+            method="POST", # Typically 201 Created
             path=path,
             json_body=pg_entity_payload,
             params=params if params else None,
@@ -495,7 +289,6 @@ class NiFiApiClient:
         )
         if not isinstance(result, ProcessGroupEntity):
             raise NiFiApiException(0, "Failed to create process group or parse response correctly.")
-        nifi_client_logger.info(f"Successfully created Process Group '{result.component.name if result.component else 'N/A'}' with ID {result.id} in parent {parent_id}")
         return result
 
     async def update_process_group(
@@ -503,23 +296,8 @@ class NiFiApiClient:
         pg_id: str,
         pg_entity_payload: ProcessGroupEntity
     ) -> ProcessGroupEntity:
-        """
-        Updates an existing process group.
-        Corresponds to PUT /process-groups/{id}.
-
-        Args:
-            pg_id: The ID of the process group to update.
-            pg_entity_payload: The ProcessGroupEntity payload with updates.
-                               Must include the correct revision.
-
-        Returns:
-            The updated ProcessGroupEntity.
-
-        Raises:
-            NiFiApiException: For API errors (e.g., 409 if revision is stale).
-        """
+        """Updates an existing process group."""
         path = f"process-groups/{pg_id}"
-        nifi_client_logger.debug(f"Attempting PUT {path} for process group {pg_id}")
         result = await self._make_request(
             method="PUT",
             path=path,
@@ -528,40 +306,22 @@ class NiFiApiClient:
         )
         if not isinstance(result, ProcessGroupEntity):
             raise NiFiApiException(0, "Failed to update process group or parse response correctly.")
-        nifi_client_logger.info(f"Successfully updated Process Group ID {pg_id}")
         return result
 
     async def delete_process_group(
         self,
         pg_id: str,
-        version: str, # NiFi docs show version as string in query
+        version: str,
         client_id: Optional[str] = None,
-        disconnected_node_acknowledged: Optional[bool] = False
+        disconnected_node_acknowledged: bool = False
     ) -> ProcessGroupEntity:
-        """
-        Deletes a process group.
-        Corresponds to DELETE /process-groups/{id}.
-
-        Args:
-            pg_id: The ID of the process group to delete.
-            version: The revision version string.
-            client_id: Optional client ID for the revision.
-            disconnected_node_acknowledged: Optional flag.
-
-        Returns:
-            The deleted ProcessGroupEntity.
-
-        Raises:
-            NiFiApiException: For API errors.
-        """
+        """Deletes a process group."""
         path = f"process-groups/{pg_id}"
         params: Dict[str, Any] = {"version": version}
         if client_id:
             params["clientId"] = client_id
-        if disconnected_node_acknowledged is not None: # Check for None explicitly
-            params["disconnectedNodeAcknowledged"] = str(disconnected_node_acknowledged).lower()
+        params["disconnectedNodeAcknowledged"] = str(disconnected_node_acknowledged).lower()
 
-        nifi_client_logger.debug(f"Attempting DELETE {path} for process group {pg_id} with params {params}")
         result = await self._make_request(
             method="DELETE",
             path=path,
@@ -570,22 +330,93 @@ class NiFiApiClient:
         )
         if not isinstance(result, ProcessGroupEntity):
             raise NiFiApiException(0, "Failed to delete process group or parse response correctly.")
-        nifi_client_logger.info(f"Successfully deleted Process Group ID {pg_id}")
         return result
 
-    # --- Processor methods (Section 3.3) ---
+    # --- Processor methods ---
     async def get_processor(self, processor_id: str) -> Optional[ProcessorEntity]:
-        nifi_client_logger.warning("get_processor is a stub and not yet implemented.")
-        return None
-    async def create_processor(self, group_id: str, processor_entity: ProcessorEntity) -> Optional[ProcessorEntity]:
-        nifi_client_logger.warning("create_processor is a stub and not yet implemented.")
-        return None
-    async def update_processor(self, processor_id: str, processor_entity: ProcessorEntity) -> Optional[ProcessorEntity]:
-        nifi_client_logger.warning("update_processor is a stub and not yet implemented.")
-        return None
-    async def delete_processor(self, processor_id: str, revision: RevisionDTO, disconnected_node_acknowledged: bool = False) -> Optional[ProcessorEntity]:
-        nifi_client_logger.warning("delete_processor is a stub and not yet implemented.")
-        return None
+        """Gets a processor by its ID."""
+        nifi_client_logger.debug(f"Attempting GET /processors/{processor_id}")
+        result = await self._make_request(
+            method="GET",
+            path=f"processors/{processor_id}",
+            response_model=ProcessorEntity,
+            allow_404=True
+        )
+        if result is None: # Handles 404 case where allow_404=True
+             nifi_client_logger.info(f"Processor with ID {processor_id} not found (404).")
+             return None
+        if not isinstance(result, ProcessorEntity):
+             raise NiFiApiException(0, f"Invalid response type for get_processor, expected ProcessorEntity, got {type(result)}")
+        nifi_client_logger.info(f"Successfully retrieved Processor details for ID {processor_id}")
+        return result
+
+    async def create_processor(self, parent_group_id: str, processor_entity_payload: ProcessorEntity) -> ProcessorEntity:
+        """Creates a new processor within the specified parent process group."""
+        path = f"process-groups/{parent_group_id}/processors"
+        nifi_client_logger.debug(f"Attempting POST {path} to create processor in group {parent_group_id}")
+        result = await self._make_request(
+            method="POST", # NiFi typically returns 201 Created for this
+            path=path,
+            json_body=processor_entity_payload,
+            response_model=ProcessorEntity
+        )
+        if not isinstance(result, ProcessorEntity):
+            raise NiFiApiException(0, "Failed to create processor or parse response correctly.")
+        processor_name = result.component.name if result.component else "N/A"
+        nifi_client_logger.info(f"Successfully created Processor '{processor_name}' with ID {result.id if result.id else 'N/A'} in parent group {parent_group_id}")
+        return result
+
+    async def update_processor(self, processor_id: str, processor_entity_payload: ProcessorEntity) -> ProcessorEntity:
+        """Updates an existing processor."""
+        path = f"processors/{processor_id}"
+        nifi_client_logger.debug(f"Attempting PUT {path} for processor {processor_id}")
+        result = await self._make_request(
+            method="PUT",
+            path=path,
+            json_body=processor_entity_payload,
+            response_model=ProcessorEntity
+        )
+        if not isinstance(result, ProcessorEntity):
+            raise NiFiApiException(0, "Failed to update processor or parse response correctly.")
+        nifi_client_logger.info(f"Successfully updated Processor ID {processor_id}")
+        return result
+
+    async def delete_processor(self, processor_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> ProcessorEntity:
+        """Deletes a processor."""
+        path = f"processors/{processor_id}"
+        params: Dict[str, Any] = {"version": version}
+        if client_id:
+            params["clientId"] = client_id
+        params["disconnectedNodeAcknowledged"] = str(disconnected_node_acknowledged).lower()
+
+        nifi_client_logger.debug(f"Attempting DELETE {path} for processor {processor_id} with params {params}")
+        result = await self._make_request(
+            method="DELETE",
+            path=path,
+            params=params,
+            response_model=ProcessorEntity
+        )
+        if not isinstance(result, ProcessorEntity):
+            raise NiFiApiException(0, "Failed to delete processor or parse response correctly.")
+        nifi_client_logger.info(f"Successfully deleted Processor ID {processor_id}")
+        return result
+
+    async def update_processor_run_status(self, processor_id: str, run_status_entity: ProcessorRunStatusEntity) -> ProcessorEntity:
+        """Updates the run status of a processor (e.g., start, stop, disable)."""
+        path = f"processors/{processor_id}/run-status"
+        nifi_client_logger.debug(f"Attempting PUT {path} for processor {processor_id} to set status with payload: {run_status_entity.model_dump_json(by_alias=True, exclude_none=True)}")
+        result = await self._make_request(
+            method="PUT",
+            path=path,
+            json_body=run_status_entity,
+            response_model=ProcessorEntity
+        )
+        if not isinstance(result, ProcessorEntity):
+            raise NiFiApiException(0, "Failed to update processor run status or parse response correctly.")
+        nifi_client_logger.info(f"Successfully updated run status for Processor ID {processor_id}")
+        return result
+
+    # --- Placeholder Stubs for Other Essential Endpoints ---
 
     # --- Connection methods (Section 3.4) ---
     async def get_connection(self, connection_id: str) -> Optional[ConnectionEntity]:
@@ -597,7 +428,7 @@ class NiFiApiClient:
     async def update_connection(self, connection_id: str, connection_entity: ConnectionEntity) -> Optional[ConnectionEntity]:
         nifi_client_logger.warning("update_connection is a stub and not yet implemented.")
         return None
-    async def delete_connection(self, connection_id: str, revision: RevisionDTO, disconnected_node_acknowledged: bool = False) -> Optional[ConnectionEntity]:
+    async def delete_connection(self, connection_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> Optional[ConnectionEntity]:
         nifi_client_logger.warning("delete_connection is a stub and not yet implemented.")
         return None
 
@@ -611,7 +442,7 @@ class NiFiApiClient:
     async def update_input_port(self, port_id: str, port_entity: PortEntity) -> Optional[PortEntity]:
         nifi_client_logger.warning("update_input_port is a stub and not yet implemented.")
         return None
-    async def delete_input_port(self, port_id: str, revision: RevisionDTO, disconnected_node_acknowledged: bool = False) -> Optional[PortEntity]:
+    async def delete_input_port(self, port_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> Optional[PortEntity]:
         nifi_client_logger.warning("delete_input_port is a stub and not yet implemented.")
         return None
 
@@ -625,6 +456,38 @@ class NiFiApiClient:
     async def update_output_port(self, port_id: str, port_entity: PortEntity) -> Optional[PortEntity]:
         nifi_client_logger.warning("update_output_port is a stub and not yet implemented.")
         return None
-    async def delete_output_port(self, port_id: str, revision: RevisionDTO, disconnected_node_acknowledged: bool = False) -> Optional[PortEntity]:
+    async def delete_output_port(self, port_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> Optional[PortEntity]:
         nifi_client_logger.warning("delete_output_port is a stub and not yet implemented.")
+        return None
+
+    # Stubs for other /processors endpoints (to be implemented later)
+    async def analyze_processor_configuration(self, processor_id: str, config_analysis_entity: ConfigurationAnalysisEntity) -> Optional[ConfigurationAnalysisEntity]:
+        nifi_client_logger.warning(f"analyze_processor_configuration for {processor_id} is a stub.")
+        return None
+    async def clear_processor_state(self, processor_id: str) -> Optional[ComponentStateEntity]:
+        nifi_client_logger.warning(f"clear_processor_state for {processor_id} is a stub.")
+        return None
+    async def delete_processor_verification_request(self, processor_id: str, request_id: str) -> Optional[VerifyConfigRequestEntity]:
+        nifi_client_logger.warning(f"delete_processor_verification_request for {processor_id}/{request_id} is a stub.")
+        return None
+    async def get_processor_diagnostics(self, processor_id: str) -> Optional[ProcessorEntity]: # Note: API returns ProcessorEntity
+        nifi_client_logger.warning(f"get_processor_diagnostics for {processor_id} is a stub.")
+        return None
+    async def get_processor_run_status_details(self, request_entity: RunStatusDetailsRequestEntity) -> Optional[ProcessorsRunStatusDetailsEntity]:
+        nifi_client_logger.warning(f"get_processor_run_status_details is a stub.")
+        return None
+    async def get_processor_property_descriptor(self, processor_id: str, property_name: str, sensitive: Optional[bool]=None) -> Optional[PropertyDescriptorEntity]:
+        nifi_client_logger.warning(f"get_processor_property_descriptor for {processor_id} property {property_name} is a stub.")
+        return None
+    async def get_processor_state(self, processor_id: str) -> Optional[ComponentStateEntity]:
+        nifi_client_logger.warning(f"get_processor_state for {processor_id} is a stub.")
+        return None
+    async def get_processor_verification_request(self, processor_id: str, request_id: str) -> Optional[VerifyConfigRequestEntity]:
+        nifi_client_logger.warning(f"get_processor_verification_request for {processor_id}/{request_id} is a stub.")
+        return None
+    async def submit_processor_verification_request(self, processor_id: str, verification_request_entity: VerifyConfigRequestEntity) -> Optional[VerifyConfigRequestEntity]:
+        nifi_client_logger.warning(f"submit_processor_verification_request for {processor_id} is a stub.")
+        return None
+    async def terminate_processor_threads(self, processor_id: str) -> Optional[ProcessorEntity]:
+        nifi_client_logger.warning(f"terminate_processor_threads for {processor_id} is a stub.")
         return None
