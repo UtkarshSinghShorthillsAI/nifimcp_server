@@ -20,6 +20,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp[cli]", # Assuming a version, adjust as per your SDK
+    "fastmcp",
     "httpx>=0.27.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.3.0", # Updated based on newer SDK examples

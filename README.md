@@ -28,3 +28,13 @@ This server exposes Apache NiFi functionalities as "tools" that can be understoo
 ## Running the Server
 
 (To be detailed further, e.g., using `mcp run`)
+```
+python3 -m src.nifimcp_server.app
+```
+
+### Running the MCP inspector
+```
+npx @modelcontextprotocol/inspector \
+  -e NIFI_MCP_USERNAME="your_nifi_user" \
+  -e NIFI_MCP_PASSWORD="your_nifi_password" \
+  python3 -m src.nifimcp_server.app
