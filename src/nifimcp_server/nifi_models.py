@@ -73,6 +73,17 @@ class ProcessorsRunStatusDetailsEntity(BaseModel): pass
 class RunStatusDetailsRequestEntity(BaseModel): pass
 
 
+# NEW/UPDATED FOR CONNECTIONS:
+class ConnectionsEntity(BaseModel): pass # NEW
+class ConnectionStatusDTO(BaseModel): pass # NEW
+class ConnectionStatusPredictionsSnapshotDTO(BaseModel): pass # NEW (nested)
+class NodeConnectionStatisticsSnapshotDTO(BaseModel): pass # NEW (nested)
+class ConnectionStatisticsSnapshotDTO(BaseModel): pass # NEW (nested)
+class ConnectionStatusEntity(BaseModel): pass # NEW
+class StatusHistoryEntity(BaseModel): pass # NEW (placeholder for now)
+class ConnectionStatisticsDTO(BaseModel): pass # NEW
+class ConnectionStatisticsEntity(BaseModel): pass # NEW
+
 # ===================================================================
 # Common/Core DTO Definitions
 # ===================================================================
@@ -200,16 +211,137 @@ class VersionedFlowSnapshotMetadataDTO(BaseModel):
     branch: Optional[str] = Field(None)
     model_config = {"extra": "allow", "populate_by_name": True}
 
-class ConnectableDTO(BaseModel):
-    id: str = Field(description="The id of the connectable component.")
-    versioned_component_id: Optional[str] = Field(default=None, alias="versionedComponentId", description="The ID of the corresponding component that is under version control")
-    type: str = Field(description="The type of the connectable component.")
-    group_id: str = Field(alias="groupId", description="The id of the group that the connectable component resides in.")
-    name: Optional[str] = Field(default=None, description="The name of the connectable component")
-    running: Optional[bool] = Field(default=None, description="Whether the connectable component is running.")
-    comments: Optional[str] = Field(default=None, description="The comments for the connectable component.")
-    exists: Optional[bool] = Field(default=None, description="Whether the connectable component exists.")
+class ConnectionDTO(BaseModel): # Review and update
+    """
+    The configuration details for a Connection.
+    Source: NiFi 2.0 REST API Docs (ConnectionDTO section, also inferred from ConnectionEntity)
+    """
+    id: Optional[str] = Field(default=None, description="The id of the connection.")
+    versioned_component_id: Optional[str] = Field(default=None, alias="versionedComponentId", description="The ID of the corresponding component that is under version control.")
+    parent_group_id: Optional[str] = Field(default=None, alias="parentGroupId", description="The ID of the parent process group of this connection.") # Also known as groupIdentifier sometimes
+
+    name: Optional[str] = Field(default=None, description="The name of the connection.")
+    comments: Optional[str] = Field(default=None, description="The comments for the connection.")
+
+    source: Optional[ConnectableDTO] = Field(default=None, description="The source of the connection.")
+    destination: Optional[ConnectableDTO] = Field(default=None, description="The destination of the connection.")
+    
+    selected_relationships: Optional[List[str]] = Field(default=None, alias="selectedRelationships", description="The selected relationships that comprise the connection.")
+    # available_relationships: Optional[List[str]] = Field(default=None, alias="availableRelationships", description="The relationships that are available from the source component.") # Usually read-only, not part of create/update payload directly
+
+    label_index: Optional[int] = Field(default=None, alias="labelIndex", description="The index of the bend point where to place the connection label.")
+    z_index: Optional[int] = Field(default=None, alias="zIndex", description="The z-index for the connection.")
+    bends: Optional[List[PositionDTO]] = Field(default=None, description="The bend points on the connection.")
+
+    flow_file_expiration: Optional[str] = Field(default=None, alias="flowFileExpiration", description="The FlowFile expiration period for the connection.")
+    back_pressure_data_size_threshold: Optional[str] = Field(default=None, alias="backPressureDataSizeThreshold", description="The FlowFile Data Size threshold for backpressure.")
+    back_pressure_object_threshold: Optional[int] = Field(default=None, alias="backPressureObjectThreshold", description="The FlowFile Count threshold for backpressure.") # NiFi: format int64
+    
+    load_balance_strategy: Optional[str] = Field(default=None, alias="loadBalanceStrategy", description="The load balancing strategy for the connection (e.g., DO_NOT_LOAD_BALANCE, ROUND_ROBIN, PARTITION_BY_ATTRIBUTE).")
+    load_balance_partition_attribute: Optional[str] = Field(default=None, alias="loadBalancePartitionAttribute", description="The attribute to use for partitioning data if loadBalanceStrategy is PARTITION_BY_ATTRIBUTE.")
+    load_balance_compression: Optional[str] = Field(default=None, alias="loadBalanceCompression", description="The compression to use for load balancing (e.g., DO_NOT_COMPRESS, COMPRESS_ATTRIBUTES_ONLY, COMPRESS_ATTRIBUTES_AND_CONTENT).")
+    
+    prioritizers: Optional[List[str]] = Field(default=None, description="The FlowFile prioritizers to use for this connection.")
+
+    # group_identifier: Optional[str] = Field(None, alias="groupIdentifier") # This is parent_group_id
+    # instance_identifier: Optional[str] = Field(None, alias="instanceIdentifier") # This seems to be internal
+
     model_config = {"populate_by_name": True, "extra": "allow"}
+
+
+# --- Models for Connection Status & Statistics ---
+class ConnectionStatusPredictionsSnapshotDTO(BaseModel): # Placeholder
+    predicted_millis_until_count_backpressure: Optional[int] = Field(None, alias="predictedMillisUntilCountBackpressure")
+    predicted_millis_until_bytes_backpressure: Optional[int] = Field(None, alias="predictedMillisUntilBytesBackpressure")
+    prediction_interval_seconds: Optional[int] = Field(None, alias="predictionIntervalSeconds")
+    # ... other prediction fields
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ConnectionStatisticsSnapshotDTO(BaseModel): # Placeholder
+    id: Optional[str] = Field(None)
+    source_id: Optional[str] = Field(None, alias="sourceId")
+    source_name: Optional[str] = Field(None, alias="sourceName")
+    destination_id: Optional[str] = Field(None, alias="destinationId")
+    destination_name: Optional[str] = Field(None, alias="destinationName")
+    flow_files_in: Optional[int] = Field(None, alias="flowFilesIn")
+    bytes_in: Optional[int] = Field(None, alias="bytesIn") # NiFi: long
+    input: Optional[str] = Field(None) # Pretty printed
+    flow_files_out: Optional[int] = Field(None, alias="flowFilesOut")
+    bytes_out: Optional[int] = Field(None, alias="bytesOut") # NiFi: long
+    output: Optional[str] = Field(None) # Pretty printed
+    flow_files_queued: Optional[int] = Field(None, alias="flowFilesQueued")
+    bytes_queued: Optional[int] = Field(None, alias="bytesQueued") # NiFi: long
+    queued: Optional[str] = Field(None) # Pretty printed
+    queued_count: Optional[str] = Field(None, alias="queuedCount") # Example: "100 / 10000"
+    queued_size: Optional[str] = Field(None, alias="queuedSize")   # Example: "1 MB / 1 GB"
+    percent_use_count: Optional[int] = Field(None, alias="percentUseCount")
+    percent_use_bytes: Optional[int] = Field(None, alias="percentUseBytes")
+    # ... other snapshot fields
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class NodeConnectionStatisticsSnapshotDTO(BaseModel): # Placeholder
+    node_id: Optional[str] = Field(None, alias="nodeId")
+    address: Optional[str] = Field(None)
+    api_port: Optional[int] = Field(None, alias="apiPort")
+    statistics: Optional[ConnectionStatisticsSnapshotDTO] = Field(None)
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ConnectionStatusDTO(BaseModel): # Defined from API doc
+    id: Optional[str] = Field(None, description="The ID of the connection.")
+    group_id: Optional[str] = Field(None, alias="groupId", description="The ID of the Process Group that the connection belongs to.")
+    name: Optional[str] = Field(None, description="The name of the connection.")
+    source_id: Optional[str] = Field(None, alias="sourceId", description="The ID of the source component.")
+    source_name: Optional[str] = Field(None, alias="sourceName", description="The name of the source component.")
+    destination_id: Optional[str] = Field(None, alias="destinationId", description="The ID of the destination component.")
+    destination_name: Optional[str] = Field(None, alias="destinationName", description="The name of the destination component.")
+    
+    flow_files_in: Optional[int] = Field(None, alias="flowFilesIn", description="The number of FlowFiles that have come into the connection in the last 5 minutes.")
+    bytes_in: Optional[int] = Field(None, alias="bytesIn", description="The size of the FlowFiles that have come into the connection in the last 5 minutes.") # NiFi uses long
+    input: Optional[str] = Field(None, description="The count and size of flowfiles that have come into the connection in the last 5 minutes.") # Pretty printed
+    
+    flow_files_out: Optional[int] = Field(None, alias="flowFilesOut", description="The number of FlowFiles that have left the connection in the last 5 minutes.")
+    bytes_out: Optional[int] = Field(None, alias="bytesOut", description="The size of the FlowFiles that have left the connection in the last 5 minutes.") # NiFi uses long
+    output: Optional[str] = Field(None, description="The count and size of flowfiles that have left the connection in the last 5 minutes.") # Pretty printed
+    
+    flow_files_queued: Optional[int] = Field(None, alias="flowFilesQueued", description="The number of FlowFiles that are currently queued in the connection.")
+    bytes_queued: Optional[int] = Field(None, alias="bytesQueued", description="The size of the FlowFiles that are currently queued in the connection.") # NiFi uses long
+    queued: Optional[str] = Field(None, description="The count and size of flowfiles that are currently queued in the connection.") # Pretty printed
+
+    percent_use_count: Optional[int] = Field(None, alias="percentUseCount", description="The percent of queue capacity used in terms of FlowFile count.")
+    percent_use_bytes: Optional[int] = Field(None, alias="percentUseBytes", description="The percent of queue capacity used in terms of data size.")
+    
+    predictions: Optional[ConnectionStatusPredictionsSnapshotDTO] = Field(None, description="Predictions, if available, for this connection.")
+    
+    # For clustered environments
+    node_snapshots: Optional[List[NodeConnectionStatisticsSnapshotDTO]] = Field(None, alias="nodeSnapshots", description="The status snapshot for each node in the cluster. If the NiFi instance is a standalone instance, rather than a clustered instance, this will be null.")
+    aggregate_snapshot: Optional[ConnectionStatisticsSnapshotDTO] = Field(None, alias="aggregateSnapshot", description="The aggregate status snapshot for all nodes in the cluster.") # This seems to be ConnectionStatusDTO itself in standalone, or an aggregation. Let's use ConnectionStatisticsSnapshotDTO as per docs.
+    stats_last_refreshed: Optional[str] = Field(None, alias="statsLastRefreshed", description="The timestamp when the status was last refreshed.")
+    
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ConnectionStatusEntity(BaseModel): # NEW
+    can_read: Optional[bool] = Field(None, description="Indicates whether the user can read a connection status.")
+    connection_status: Optional[ConnectionStatusDTO] = Field(None, alias="connectionStatus")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class StatusHistoryEntity(BaseModel): # NEW - Placeholder for now
+    # Define based on actual `statusHistory` structure, e.g.
+    # status_history: Optional[StatusHistoryDTO] = Field(None, alias="statusHistory")
+    can_read: Optional[bool] = Field(None)
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ConnectionStatisticsDTO(BaseModel): # NEW
+    id: Optional[str] = Field(None, description="The ID of the connection.")
+    stats_last_refreshed: Optional[str] = Field(None, alias="statsLastRefreshed", description="The timestamp when the stats were last refreshed.")
+    aggregate_snapshot: Optional[ConnectionStatisticsSnapshotDTO] = Field(None, alias="aggregateSnapshot", description="The aggregate statistics for all nodes in the cluster.")
+    node_snapshots: Optional[List[NodeConnectionStatisticsSnapshotDTO]] = Field(None, alias="nodeSnapshots", description="A list of status snapshots for each node")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ConnectionStatisticsEntity(BaseModel): # NEW
+    connection_statistics: Optional[ConnectionStatisticsDTO] = Field(None, alias="connectionStatistics")
+    can_read: Optional[bool] = Field(None, description="Indicates whether the user can read the connection statistics.")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
 
 class BundleDTO(BaseModel):
     group: Optional[str] = Field(None, description="The group of the bundle.")
@@ -495,6 +627,17 @@ class RunStatusDetailsRequestEntity(BaseModel):
 # Connection Related Models
 # ... (ConnectionDTO, ConnectionEntity remain the same) ...
 # ===================================================================
+class ConnectableDTO(BaseModel):
+    id: str = Field(description="The id of the connectable component.")
+    versioned_component_id: Optional[str] = Field(default=None, alias="versionedComponentId", description="The ID of the corresponding component that is under version control")
+    type: str = Field(description="The type of the connectable component.") # E.g. PROCESSOR, REMOTE_INPUT_PORT, REMOTE_OUTPUT_PORT, INPUT_PORT, OUTPUT_PORT, FUNNEL
+    group_id: str = Field(alias="groupId", description="The id of the group that the connectable component resides in.")
+    name: Optional[str] = Field(default=None, description="The name of the connectable component")
+    running: Optional[bool] = Field(default=None, description="Whether the connectable component is running.")
+    comments: Optional[str] = Field(default=None, description="The comments for the connectable component.")
+    exists: Optional[bool] = Field(default=None, description="Whether the connectable component exists.")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+    
 class ConnectionDTO(BaseModel):
     id: Optional[str] = Field(default=None)
     versioned_component_id: Optional[str] = Field(default=None, alias="versionedComponentId")
@@ -523,27 +666,46 @@ class ConnectionDTO(BaseModel):
     destination_type: Optional[str] = Field(default=None, alias="destinationType")
     model_config = {"populate_by_name": True, "extra": "allow"}
 
-class ConnectionEntity(BaseModel):
-    revision: Optional[RevisionDTO] = Field(None)
-    id: Optional[str] = Field(default=None)
-    uri: Optional[HttpUrl] = Field(default=None)
-    position: Optional[PositionDTO] = Field(default=None)
-    permissions: Optional[PermissionDTO] = Field(default=None)
-    bulletins: Optional[List[BulletinEntity]] = Field(default=None)
-    disconnected_node_acknowledged: Optional[bool] = Field(default=None, alias="disconnectedNodeAcknowledged")
-    component: Optional[ConnectionDTO] = Field(default=None)
-    status: Optional[Any] = Field(default=None) # Placeholder for ConnectionStatusDTO
-    bends: Optional[List[PositionDTO]] = Field(default=None)
-    label_index: Optional[int] = Field(default=None, alias="labelIndex")
-    z_index: Optional[int] = Field(default=None, alias="zIndex")
-    source_id: Optional[str] = Field(default=None, alias="sourceId")
-    source_group_id: Optional[str] = Field(default=None, alias="sourceGroupId")
-    source_type: Optional[str] = Field(default=None, alias="sourceType")
-    destination_id: Optional[str] = Field(default=None, alias="destinationId")
-    destination_group_id: Optional[str] = Field(default=None, alias="destinationGroupId")
-    destination_type: Optional[str] = Field(default=None, alias="destinationType")
+# --- ConnectionEntity and ConnectionsEntity ---
+class ConnectionEntity(BaseModel): # Review and update
+    revision: Optional[RevisionDTO] = Field(None, description="The revision information for this entity.")
+    id: Optional[str] = Field(default=None, description="The id of the component.")
+    uri: Optional[HttpUrl] = Field(default=None, description="The URI for futures requests to this component.")
+    position: Optional[PositionDTO] = Field(default=None, description="The position of this component's label in the UI if applicable.")
+    permissions: Optional[PermissionDTO] = Field(default=None, description="The permissions for this component.")
+    bulletins: Optional[List[BulletinEntity]] = Field(default=None, description="The bulletins for this component.")
+    disconnected_node_acknowledged: Optional[bool] = Field(default=None, alias="disconnectedNodeAcknowledged", description="Acknowledges that this node is disconnected to allow for mutable requests to proceed.")
+    
+    component: Optional[ConnectionDTO] = Field(default=None, description="The connection component details.")
+    status: Optional[ConnectionStatusDTO] = Field(default=None, description="The status of the connection.") # UPDATED from Any
+
+    # These fields are often part of the component (ConnectionDTO), but the API doc example for ConnectionEntity shows them at top level too.
+    # Keeping them here allows flexibility if NiFi returns them at this level, Pydantic will populate if present.
+    # The primary source for these when creating/updating should be via the component.
+    source_id: Optional[str] = Field(default=None, alias="sourceId", description="The ID of the source of this connection.")
+    source_group_id: Optional[str] = Field(default=None, alias="sourceGroupId", description="The ID of the Process Group that the source of this connection belongs to.")
+    source_type: Optional[str] = Field(default=None, alias="sourceType", description="The type of component that is the source of this connection.")
+    destination_id: Optional[str] = Field(default=None, alias="destinationId", description="The ID of the destination of this connection.")
+    destination_group_id: Optional[str] = Field(default=None, alias="destinationGroupId", description="The ID of the Process Group that the destination of this connection belongs to.")
+    destination_type: Optional[str] = Field(default=None, alias="destinationType", description="The type of component that is the destination of this connection.")
+
     model_config = {"populate_by_name": True, "extra": "allow"}
 
+class ConnectionsEntity(BaseModel): # NEW for GET /process-groups/{id}/connections
+    connections: Optional[List[ConnectionEntity]] = Field(default=None)
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class FlowSnippetDTO(BaseModel):
+    processors: Optional[List[ProcessorEntity]] = Field(default=None)
+    connections: Optional[List[ConnectionEntity]] = Field(default=None) # Ensure this uses ConnectionEntity
+    input_ports: Optional[List[PortEntity]] = Field(default=None, alias="inputPorts")
+    output_ports: Optional[List[PortEntity]] = Field(default=None, alias="outputPorts")
+    funnels: Optional[List[Any]] = Field(default=None) # Placeholder for FunnelEntity
+    labels: Optional[List[Any]] = Field(default=None) # Placeholder for LabelEntity
+    process_groups: Optional[List[ProcessGroupEntity]] = Field(default=None, alias="processGroups")
+    remote_process_groups: Optional[List[Any]] = Field(default=None, alias="remoteProcessGroups") # Placeholder for RemoteProcessGroupEntity
+    controller_services: Optional[List[ControllerServiceEntity]] = Field(default=None, alias="controllerServices")
+    model_config = {"extra": "allow", "populate_by_name": True}
 # ===================================================================
 # Input/Output Port Related Models
 # ... (PortDTO, PortEntity remain the same) ...
@@ -625,12 +787,12 @@ FlowSnippetDTO.model_rebuild()
 VersionedFlowSnapshotDTO.model_rebuild()
 ProcessorConfigDTO.model_rebuild()
 ProcessorDTO.model_rebuild()
-ConnectionDTO.model_rebuild()
-PortDTO.model_rebuild()
+# ConnectionDTO.model_rebuild()
+# PortDTO.model_rebuild()
 ProcessGroupEntity.model_rebuild()
 ProcessorEntity.model_rebuild()
-ConnectionEntity.model_rebuild()
-PortEntity.model_rebuild()
+# ConnectionEntity.model_rebuild()
+# PortEntity.model_rebuild()
 
 # NEW/UPDATED model_rebuild calls for processors:
 ProcessorStatusDTO.model_rebuild()
@@ -650,3 +812,17 @@ VerifyConfigRequestEntity.model_rebuild()
 ProcessorRunStatusDetailsDTO.model_rebuild()
 ProcessorsRunStatusDetailsEntity.model_rebuild()
 RunStatusDetailsRequestEntity.model_rebuild()
+
+# NEW model_rebuild calls for Connections:
+ConnectableDTO.model_rebuild() # If ConnectableDTO references other models defined later, or if it was changed
+ConnectionDTO.model_rebuild()
+ConnectionStatusPredictionsSnapshotDTO.model_rebuild()
+ConnectionStatisticsSnapshotDTO.model_rebuild()
+NodeConnectionStatisticsSnapshotDTO.model_rebuild()
+ConnectionStatusDTO.model_rebuild()
+ConnectionStatusEntity.model_rebuild()
+StatusHistoryEntity.model_rebuild()
+ConnectionStatisticsDTO.model_rebuild()
+ConnectionStatisticsEntity.model_rebuild()
+ConnectionEntity.model_rebuild()
+ConnectionsEntity.model_rebuild()

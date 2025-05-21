@@ -32,6 +32,10 @@ from .nifi_models import (
     VerifyConfigRequestEntity,
     ProcessorsRunStatusDetailsEntity,
     RunStatusDetailsRequestEntity,
+    ConnectionsEntity,             # NEW
+    ConnectionStatusEntity,        # NEW
+    StatusHistoryEntity,           # NEW
+    ConnectionStatisticsEntity,    # NEW
 )
 
 # Initialize a logger for this module
@@ -416,21 +420,91 @@ class NiFiApiClient:
         nifi_client_logger.info(f"Successfully updated run status for Processor ID {processor_id}")
         return result
 
-    # --- Placeholder Stubs for Other Essential Endpoints ---
 
-    # --- Connection methods (Section 3.4) ---
-    async def get_connection(self, connection_id: str) -> Optional[ConnectionEntity]:
-        nifi_client_logger.warning("get_connection is a stub and not yet implemented.")
-        return None
-    async def create_connection(self, group_id: str, connection_entity: ConnectionEntity) -> Optional[ConnectionEntity]:
-        nifi_client_logger.warning("create_connection is a stub and not yet implemented.")
-        return None
-    async def update_connection(self, connection_id: str, connection_entity: ConnectionEntity) -> Optional[ConnectionEntity]:
-        nifi_client_logger.warning("update_connection is a stub and not yet implemented.")
-        return None
-    async def delete_connection(self, connection_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> Optional[ConnectionEntity]:
-        nifi_client_logger.warning("delete_connection is a stub and not yet implemented.")
-        return None
+    # --- Connection methods ---
+    async def create_connection(self, parent_group_id: str, connection_entity_payload: ConnectionEntity) -> ConnectionEntity: # Endpoint 1.2
+        """Creates a new connection within the specified parent process group."""
+        path = f"process-groups/{parent_group_id}/connections"
+        nifi_client_logger.debug(f"Attempting POST {path} to create connection in group {parent_group_id}")
+        result = await self._make_request(method="POST", path=path, json_body=connection_entity_payload, response_model=ConnectionEntity) # NiFi typically 201 Created
+        if not isinstance(result, ConnectionEntity): raise NiFiApiException(0, "Failed to create connection or parse response correctly.")
+        nifi_client_logger.info(f"Successfully created Connection with ID {result.id if result.id else 'N/A'} in parent group {parent_group_id}")
+        return result
+
+    async def get_connections_in_process_group(self, process_group_id: str) -> Optional[ConnectionsEntity]: # NEW - Endpoint 1.1
+        """Gets all connections in a specified process group."""
+        path = f"process-groups/{process_group_id}/connections"
+        nifi_client_logger.debug(f"Attempting GET {path}")
+        result = await self._make_request(method="GET", path=path, response_model=ConnectionsEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, ConnectionsEntity): raise NiFiApiException(0, f"Invalid response for get_connections_in_process_group, expected ConnectionsEntity, got {type(result)}")
+        return result
+
+    async def get_connection(self, connection_id: str) -> Optional[ConnectionEntity]: # Endpoint 2.2
+        """Gets a connection by its ID."""
+        nifi_client_logger.debug(f"Attempting GET /connections/{connection_id}")
+        result = await self._make_request(method="GET", path=f"connections/{connection_id}", response_model=ConnectionEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, ConnectionEntity): raise NiFiApiException(0, f"Invalid response for get_connection, expected ConnectionEntity, got {type(result)}")
+        nifi_client_logger.info(f"Successfully retrieved Connection details for ID {connection_id}")
+        return result
+
+    async def update_connection(self, connection_id: str, connection_entity_payload: ConnectionEntity) -> ConnectionEntity: # Endpoint 2.3
+        """Updates an existing connection."""
+        path = f"connections/{connection_id}"
+        nifi_client_logger.debug(f"Attempting PUT {path} for connection {connection_id}")
+        result = await self._make_request(method="PUT", path=path, json_body=connection_entity_payload, response_model=ConnectionEntity)
+        if not isinstance(result, ConnectionEntity): raise NiFiApiException(0, "Failed to update connection or parse response correctly.")
+        nifi_client_logger.info(f"Successfully updated Connection ID {connection_id}")
+        return result
+
+    async def delete_connection(self, connection_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> ConnectionEntity: # Endpoint 2.1 - Signature updated
+        """Deletes a connection."""
+        path = f"connections/{connection_id}"
+        params: Dict[str, Any] = {"version": version}
+        if client_id:
+            params["clientId"] = client_id
+        params["disconnectedNodeAcknowledged"] = str(disconnected_node_acknowledged).lower()
+        nifi_client_logger.debug(f"Attempting DELETE {path} for connection {connection_id} with params {params}")
+        result = await self._make_request(method="DELETE", path=path, params=params, response_model=ConnectionEntity)
+        if not isinstance(result, ConnectionEntity): raise NiFiApiException(0, "Failed to delete connection or parse response correctly.")
+        nifi_client_logger.info(f"Successfully deleted Connection ID {connection_id}")
+        return result
+    
+    # --- Connection Flow Endpoints ---
+    async def get_connection_status(self, connection_id: str, nodewise: bool = False, cluster_node_id: Optional[str] = None) -> Optional[ConnectionStatusEntity]: # NEW - Endpoint 3.1
+        """Gets the status for a connection."""
+        path = f"flow/connections/{connection_id}/status"
+        params: Dict[str, Any] = {"nodewise": str(nodewise).lower()}
+        if cluster_node_id:
+            params["clusterNodeId"] = cluster_node_id
+        nifi_client_logger.debug(f"Attempting GET {path} with params {params}")
+        result = await self._make_request(method="GET", path=path, params=params, response_model=ConnectionStatusEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, ConnectionStatusEntity): raise NiFiApiException(0, f"Invalid response for get_connection_status, expected ConnectionStatusEntity, got {type(result)}")
+        return result
+
+    async def get_connection_status_history(self, connection_id: str) -> Optional[StatusHistoryEntity]: # NEW - Endpoint 3.2
+        """Gets the status history for a connection."""
+        path = f"flow/connections/{connection_id}/status/history"
+        nifi_client_logger.debug(f"Attempting GET {path}")
+        result = await self._make_request(method="GET", path=path, response_model=StatusHistoryEntity, allow_404=True)
+        # Basic placeholder for StatusHistoryEntity, so this might need refinement later if complex
+        if result is None: return None
+        if not isinstance(result, StatusHistoryEntity): raise NiFiApiException(0, f"Invalid response for get_connection_status_history, expected StatusHistoryEntity, got {type(result)}")
+        return result
+
+    async def get_connection_statistics(self, connection_id: str, nodewise: bool = False, cluster_node_id: Optional[str] = None) -> Optional[ConnectionStatisticsEntity]: # NEW - Endpoint 3.3
+        """Gets statistics for a connection."""
+        path = f"flow/connections/{connection_id}/statistics"
+        params: Dict[str, Any] = {"nodewise": str(nodewise).lower()}
+        if cluster_node_id:
+            params["clusterNodeId"] = cluster_node_id
+        nifi_client_logger.debug(f"Attempting GET {path} with params {params}")
+        result = await self._make_request(method="GET", path=path, params=params, response_model=ConnectionStatisticsEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, ConnectionStatisticsEntity): raise NiFiApiException(0, f"Invalid response for get_connection_statistics, expected ConnectionStatisticsEntity, got {type(result)}")
+        return result
 
     # --- Input Port methods (Section 3.5) ---
     async def get_input_port(self, port_id: str) -> Optional[PortEntity]:
