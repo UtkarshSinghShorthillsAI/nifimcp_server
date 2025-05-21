@@ -20,7 +20,7 @@ import anyio
 import dotenv
 import httpx
 # Use the specific FastMCP library
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 from pydantic import BaseModel, ValidationError
 
 # Import from our sibling modules
