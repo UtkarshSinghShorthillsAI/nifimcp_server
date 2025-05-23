@@ -23,7 +23,8 @@ from ..nifi_models import (
     ProcessorConfigDTO, # For detailed config updates within ProcessorDTO
     ProcessorRunStatusEntity, # For updating run status
     NiFiApiException,
-    NiFiAuthException
+    NiFiAuthException,
+    ProcessorsEntity, # NEW
 )
 from ..app import get_session_nifi_client
 
@@ -297,7 +298,28 @@ async def update_nifi_processor_run_status_impl(
         tool_logger.exception(f"Unexpected error in update_nifi_processor_run_status_impl for {payload.processor_id}: {e}")
         raise ToolError(f"An unexpected error occurred: {str(e)}")
 
-
+async def list_nifi_processors_in_group_impl( # NEW Tool Impl
+    ctx: Context,
+    process_group_id: str = Field(..., description="The ID of the process group for which to list processors."),
+    include_descendants: bool = Field(False, description="Whether to include processors from all descendant process groups.")
+) -> ProcessorsEntity:
+    """Lists all processors within a specified process group."""
+    tool_logger.info(f"Tool 'list_nifi_processors_in_group' called for PG ID {process_group_id}, include_descendants: {include_descendants}")
+    try:
+        nifi_client = await get_session_nifi_client(ctx)
+        result_entity = await nifi_client.get_processors_in_group(process_group_id, include_descendant_groups=include_descendants)
+        
+        if result_entity is None: # Handles 404 for process_group_id or no processors
+            tool_logger.info(f"No processors found for PG {process_group_id} (include_descendants={include_descendants}) or PG not found.")
+            return ProcessorsEntity(processors=[]) # Return empty list
+        return result_entity
+    except (NiFiAuthException, NiFiApiException) as e:
+        tool_logger.error(f"Failed to list processors for PG {process_group_id}: {e}")
+        raise ToolError(f"Failed to list processors: {e.message if hasattr(e, 'message') else str(e)}") from e
+    except Exception as e:
+        tool_logger.exception(f"Unexpected error in list_nifi_processors_in_group_impl for PG {process_group_id}: {e}")
+        raise ToolError(f"An unexpected error occurred: {str(e)}")
+    
 # --- Tool Registration ---
 def register_processor_tools(app: FastMCP):
     tool_logger.info("Registering Processor tools...")
@@ -306,4 +328,5 @@ def register_processor_tools(app: FastMCP):
     app.tool(name="update_nifi_processor")(update_nifi_processor_impl)
     app.tool(name="delete_nifi_processor")(delete_nifi_processor_impl)
     app.tool(name="update_nifi_processor_run_status")(update_nifi_processor_run_status_impl)
+    app.tool(name="list_nifi_processors_in_group")(list_nifi_processors_in_group_impl) # NEW
     tool_logger.info("Processor tools registration complete.")

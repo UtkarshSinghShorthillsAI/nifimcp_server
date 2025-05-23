@@ -50,6 +50,10 @@ class AuthenticationConfigurationDTO(BaseModel): pass
 class AuthenticationConfigurationEntity(BaseModel): pass
 class NiFiClientCreds(BaseModel): pass
 
+class ProcessGroupsEntity(BaseModel): pass # NEW
+class ProcessorsEntity(BaseModel): pass   # NEW
+class ProcessGroupContentOverviewDTO(BaseModel): pass # NEW
+
 # NEW/UPDATED FOR PROCESSORS:
 class ProcessorStatusDTO(BaseModel): pass
 class ProcessorRunStatusEntity(BaseModel): pass
@@ -476,11 +480,26 @@ class ProcessGroupEntity(BaseModel):
     public_output_port_count: Optional[int] = Field(default=None, alias="publicOutputPortCount")
     parameter_context: Optional[ParameterContextReferenceEntity] = Field(default=None, alias="parameterContext")
     parameter_context_name: Optional[str] = Field(default=None, alias="parameterContextName")
+    stats_last_refreshed: Optional[str] = Field(None, alias="statsLastRefreshed", description="When the status statistics were last refreshed") 
     input_port_count: Optional[int] = Field(default=None, alias="inputPortCount")
     output_port_count: Optional[int] = Field(default=None, alias="outputPortCount")
     process_group_update_strategy: Optional[str] = Field(None, alias="processGroupUpdateStrategy")
     model_config = {"populate_by_name": True, "extra": "allow"}
 
+# NEW Plural Entities for list operations
+class ProcessGroupsEntity(BaseModel):
+    process_groups: Optional[List[ProcessGroupEntity]] = Field(None, alias="processGroups")
+    # NiFi API might also include 'generatedTimestamp' or similar metadata here
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+# NEW DTO for the master tool response
+class ProcessGroupContentOverviewDTO(BaseModel):
+    process_group_id: str = Field(description="The ID of the process group being described.")
+    child_process_groups: Optional[List[ProcessGroupEntity]] = Field(None, alias="childProcessGroups", description="List of direct child process groups.")
+    processors: Optional[List[ProcessorEntity]] = Field(None, description="List of processors directly within this group.")
+    connections: Optional[List[ConnectionEntity]] = Field(None, description="List of connections directly within this group.")
+    errors: Optional[List[str]] = Field(None, description="Any errors encountered while fetching parts of the content.")
+    model_config = {"populate_by_name": True, "extra": "allow"}
 # ===================================================================
 # Processor Related Models (UPDATED SECTION)
 # ===================================================================
@@ -532,7 +551,9 @@ class ProcessorEntity(BaseModel): # UPDATED
     status: Optional[ProcessorStatusDTO] = Field(default=None, description="The status of the processor.") # UPDATED
     operate_permissions: Optional[PermissionDTO] = Field(default=None, alias="operatePermissions", description="Permissions to operate the component.")
     model_config = {"populate_by_name": True, "extra": "allow"}
-
+class ProcessorsEntity(BaseModel):
+    processors: Optional[List[ProcessorEntity]] = Field(None)
+    model_config = {"populate_by_name": True, "extra": "allow"}
 class ProcessorRunStatusEntity(BaseModel): # NEW for PUT /processors/{id}/run-status
     revision: RevisionDTO = Field(description="The revision for this request.")
     state: str = Field(description="The desired state of the processor (e.g., RUNNING, STOPPED, DISABLED).")
@@ -826,3 +847,7 @@ ConnectionStatisticsDTO.model_rebuild()
 ConnectionStatisticsEntity.model_rebuild()
 ConnectionEntity.model_rebuild()
 ConnectionsEntity.model_rebuild()
+
+ProcessGroupsEntity.model_rebuild()   # NEW
+ProcessorsEntity.model_rebuild()      # NEW
+ProcessGroupContentOverviewDTO.model_rebuild() # NEW

@@ -36,6 +36,8 @@ from .nifi_models import (
     ConnectionStatusEntity,        # NEW
     StatusHistoryEntity,           # NEW
     ConnectionStatisticsEntity,    # NEW
+    ProcessGroupsEntity,           # NEW
+    ProcessorsEntity,              # NEW
 )
 
 # Initialize a logger for this module
@@ -336,6 +338,40 @@ class NiFiApiClient:
             raise NiFiApiException(0, "Failed to delete process group or parse response correctly.")
         return result
 
+    async def get_process_groups_in_group(self, parent_group_id: str) -> Optional[ProcessGroupsEntity]: # NEW
+        """Gets all child process groups within a specified parent process group."""
+        path = f"process-groups/{parent_group_id}/process-groups"
+        nifi_client_logger.debug(f"Attempting GET {path}")
+        result = await self._make_request(method="GET", path=path, response_model=ProcessGroupsEntity, allow_404=True) # parent_group_id might 404
+        if result is None: 
+            nifi_client_logger.info(f"No child process groups found or parent group {parent_group_id} not found.")
+            return None
+        if not isinstance(result, ProcessGroupsEntity): 
+            raise NiFiApiException(0, f"Invalid response for get_process_groups_in_group, expected ProcessGroupsEntity, got {type(result)}")
+        return result
+
+    async def get_processors_in_group(self, parent_group_id: str, include_descendant_groups: bool = False) -> Optional[ProcessorsEntity]: # NEW
+        """Gets all processors within a specified parent process group."""
+        path = f"process-groups/{parent_group_id}/processors"
+        params: Dict[str, Any] = {"includeDescendantGroups": str(include_descendant_groups).lower()}
+        nifi_client_logger.debug(f"Attempting GET {path} with params {params}")
+        result = await self._make_request(method="GET", path=path, params=params, response_model=ProcessorsEntity, allow_404=True) # parent_group_id might 404
+        if result is None: 
+            nifi_client_logger.info(f"No processors found or parent group {parent_group_id} not found.")
+            return None
+        if not isinstance(result, ProcessorsEntity): 
+            raise NiFiApiException(0, f"Invalid response for get_processors_in_group, expected ProcessorsEntity, got {type(result)}")
+        return result
+    
+    async def get_connections_in_process_group(self, process_group_id: str) -> Optional[ConnectionsEntity]:
+        """Gets all connections in a specified process group."""
+        path = f"process-groups/{process_group_id}/connections"
+        nifi_client_logger.debug(f"Attempting GET {path}")
+        result = await self._make_request(method="GET", path=path, response_model=ConnectionsEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, ConnectionsEntity): raise NiFiApiException(0, f"Invalid response for get_connections_in_process_group, expected ConnectionsEntity, got {type(result)}")
+        return result
+    
     # --- Processor methods ---
     async def get_processor(self, processor_id: str) -> Optional[ProcessorEntity]:
         """Gets a processor by its ID."""
@@ -347,10 +383,10 @@ class NiFiApiClient:
             allow_404=True
         )
         if result is None: # Handles 404 case where allow_404=True
-             nifi_client_logger.info(f"Processor with ID {processor_id} not found (404).")
-             return None
+            nifi_client_logger.info(f"Processor with ID {processor_id} not found (404).")
+            return None
         if not isinstance(result, ProcessorEntity):
-             raise NiFiApiException(0, f"Invalid response type for get_processor, expected ProcessorEntity, got {type(result)}")
+            raise NiFiApiException(0, f"Invalid response type for get_processor, expected ProcessorEntity, got {type(result)}")
         nifi_client_logger.info(f"Successfully retrieved Processor details for ID {processor_id}")
         return result
 
@@ -429,15 +465,6 @@ class NiFiApiClient:
         result = await self._make_request(method="POST", path=path, json_body=connection_entity_payload, response_model=ConnectionEntity) # NiFi typically 201 Created
         if not isinstance(result, ConnectionEntity): raise NiFiApiException(0, "Failed to create connection or parse response correctly.")
         nifi_client_logger.info(f"Successfully created Connection with ID {result.id if result.id else 'N/A'} in parent group {parent_group_id}")
-        return result
-
-    async def get_connections_in_process_group(self, process_group_id: str) -> Optional[ConnectionsEntity]: # NEW - Endpoint 1.1
-        """Gets all connections in a specified process group."""
-        path = f"process-groups/{process_group_id}/connections"
-        nifi_client_logger.debug(f"Attempting GET {path}")
-        result = await self._make_request(method="GET", path=path, response_model=ConnectionsEntity, allow_404=True)
-        if result is None: return None
-        if not isinstance(result, ConnectionsEntity): raise NiFiApiException(0, f"Invalid response for get_connections_in_process_group, expected ConnectionsEntity, got {type(result)}")
         return result
 
     async def get_connection(self, connection_id: str) -> Optional[ConnectionEntity]: # Endpoint 2.2

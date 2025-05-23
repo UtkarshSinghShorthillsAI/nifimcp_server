@@ -3,12 +3,24 @@ MCP Tools for interacting with NiFi Process Groups.
 """
 import logging
 from typing import Any, Optional
-
+import asyncio
 # Use the specific FastMCP version
 from fastmcp import FastMCP, Context
 from fastmcp.exceptions import ToolError
 # Import our Pydantic models
-from ..nifi_models import ProcessGroupEntity, RevisionDTO, NiFiApiException, NiFiAuthException, ProcessGroupDTO, PositionDTO
+from ..nifi_models import (
+    ProcessGroupEntity,
+    RevisionDTO, 
+    NiFiApiException, 
+    NiFiAuthException, 
+    ProcessGroupDTO, 
+    PositionDTO,
+    ProcessGroupsEntity,           # NEW
+    ProcessorsEntity,              # NEW - For master tool
+    ConnectionsEntity,             # NEW - For master tool
+    ConnectionEntity, ProcessorEntity, # For types in ProcessGroupContentOverviewDTO
+    ProcessGroupContentOverviewDTO # NEW
+    )
 from pydantic import Field, BaseModel
 
 # Import utility to get session client
@@ -237,6 +249,106 @@ async def delete_nifi_process_group_impl(
         tool_logger.exception(f"Unexpected error in delete_nifi_process_group_impl for {payload.process_group_id}: {e}")
         raise ToolError(f"An unexpected error occurred: {e}")
 
+
+async def list_nifi_process_groups_in_group_impl( # NEW Tool Impl
+    ctx: Context,
+    parent_group_id: str = Field(..., description="The ID of the parent process group for which to list child process groups.")
+) -> ProcessGroupsEntity:
+    """Lists all direct child process groups within a specified parent process group."""
+    tool_logger.info(f"Tool 'list_nifi_process_groups_in_group' called for parent_group_id: {parent_group_id}")
+    try:
+        nifi_client = await get_session_nifi_client(ctx)
+        result_entity = await nifi_client.get_process_groups_in_group(parent_group_id)
+        if result_entity is None: # Handles 404 for parent_group_id or no children
+            tool_logger.info(f"No child process groups found for parent {parent_group_id} or parent not found.")
+            return ProcessGroupsEntity(processGroups=[]) # Return empty list
+        return result_entity
+    except (NiFiAuthException, NiFiApiException) as e:
+        tool_logger.error(f"Failed to list child process groups for {parent_group_id}: {e}")
+        raise ToolError(f"Failed to list child process groups: {e.message if hasattr(e, 'message') else str(e)}") from e
+    except Exception as e:
+        tool_logger.exception(f"Unexpected error in list_nifi_process_groups_in_group_impl for {parent_group_id}: {e}")
+        raise ToolError(f"An unexpected error occurred: {str(e)}")
+
+
+async def get_nifi_process_group_content_overview_impl( # NEW Master Tool Impl
+    ctx: Context,
+    process_group_id: str = Field(..., description="The ID of the process group to get an overview of its content (child PGs, processors, connections).")
+) -> ProcessGroupContentOverviewDTO:
+    """
+    Retrieves an overview of the direct content of a specified process group,
+    including its child process groups, processors, and connections.
+    """
+    tool_logger.info(f"Tool 'get_nifi_process_group_content_overview' called for PG ID: {process_group_id}")
+    errors_encountered: List[str] = []
+    
+    # Initialize with default empty values or None
+    child_pgs_list_for_dto: Optional[List[ProcessGroupEntity]] = []
+    processors_list_for_dto: Optional[List[ProcessorEntity]] = []
+    connections_list_for_dto: Optional[List[ConnectionEntity]] = []
+
+    try:
+        nifi_client = await get_session_nifi_client(ctx)
+
+        results = await asyncio.gather(
+            nifi_client.get_process_groups_in_group(process_group_id),
+            nifi_client.get_processors_in_group(process_group_id, include_descendant_groups=False),
+            nifi_client.get_connections_in_process_group(process_group_id),
+            return_exceptions=True # Allow individual calls to fail without stopping others
+        )
+
+        # Process child process groups
+        child_pgs_result = results[0]
+        if isinstance(child_pgs_result, Exception):
+            error_msg = f"Error fetching child process groups: {str(child_pgs_result)}"
+            tool_logger.error(error_msg)
+            errors_encountered.append(error_msg)
+        elif child_pgs_result and child_pgs_result.process_groups:
+            # No model_dump needed here if ProcessGroupContentOverviewDTO expects List[ProcessGroupEntity]
+            # Pydantic can handle assignment of compatible Pydantic model instances.
+            # The issue was likely that the list itself might have been None or the items weren't correctly typed before.
+            # If further validation issues occur, this is where .model_dump(by_alias=True) would be used:
+            child_pgs_list_for_dto = [pg.model_dump(by_alias=True) for pg in child_pgs_result.process_groups]
+            # child_pgs_list_for_dto = child_pgs_result.process_groups
+
+
+        # Process processors
+        processors_result = results[1]
+        if isinstance(processors_result, Exception):
+            error_msg = f"Error fetching processors: {str(processors_result)}"
+            tool_logger.error(error_msg)
+            errors_encountered.append(error_msg)
+        elif processors_result and processors_result.processors:
+            # processors_list_for_dto = [p.model_dump(by_alias=True) for p in processors_result.processors]
+            processors_list_for_dto = processors_result.processors
+
+
+        # Process connections
+        connections_result = results[2]
+        if isinstance(connections_result, Exception):
+            error_msg = f"Error fetching connections: {str(connections_result)}"
+            tool_logger.error(error_msg)
+            errors_encountered.append(error_msg)
+        elif connections_result and connections_result.connections:
+            # connections_list_for_dto = [c.model_dump(by_alias=True) for c in connections_result.connections]
+            connections_list_for_dto = connections_result.connections
+
+        return ProcessGroupContentOverviewDTO(
+            process_group_id=process_group_id,
+            child_process_groups=child_pgs_list_for_dto if child_pgs_list_for_dto is not None else [],
+            processors=processors_list_for_dto if processors_list_for_dto is not None else [],
+            connections=connections_list_for_dto if connections_list_for_dto is not None else [],
+            errors=errors_encountered if errors_encountered else None
+        )
+
+    except (NiFiAuthException, NiFiApiException) as e: # Catch errors from get_session_nifi_client or initial setup
+        tool_logger.error(f"API/Auth error during content overview setup for PG {process_group_id}: {e}")
+        # If nifi_client itself fails, we can't proceed.
+        raise ToolError(f"Failed to get content overview due to API/Auth issue: {e.message if hasattr(e, 'message') else str(e)}") from e
+    except Exception as e:
+        tool_logger.exception(f"Unexpected error in get_nifi_process_group_content_overview_impl for PG {process_group_id}: {e}")
+        # This catches broader issues, potentially before or after the gather call.
+        raise ToolError(f"An unexpected error occurred fetching content overview: {str(e)}") from e
 # --- Tool Registration ---
 # (register_process_group_tools function remains the same, ensuring these _impl functions are registered)
 
@@ -261,5 +373,6 @@ def register_process_group_tools(app: FastMCP):
     app.tool(name="get_nifi_process_group_details")(get_nifi_process_group_details_impl) # Use the real impl
     app.tool(name="update_nifi_process_group")(update_nifi_process_group_impl)
     app.tool(name="delete_nifi_process_group")(delete_nifi_process_group_impl)
-
+    app.tool(name="list_nifi_process_groups_in_group")(list_nifi_process_groups_in_group_impl) # NEW
+    app.tool(name="get_nifi_process_group_content_overview")(get_nifi_process_group_content_overview_impl) # NEW
     registration_logger.info("Process Group tools registration complete (partially).") # Update log
