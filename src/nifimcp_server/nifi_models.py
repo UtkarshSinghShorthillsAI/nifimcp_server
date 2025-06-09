@@ -76,6 +76,13 @@ class ProcessorRunStatusDetailsDTO(BaseModel): pass
 class ProcessorsRunStatusDetailsEntity(BaseModel): pass
 class RunStatusDetailsRequestEntity(BaseModel): pass
 
+# NEW FOR /flow/processor-types
+class ControllerServiceApiDTO(BaseModel): pass
+class RequiredPermissionDTO(BaseModel): pass
+class ExplicitRestrictionDTO(BaseModel): pass
+class DocumentedTypeDTO(BaseModel): pass
+class ProcessorTypesEntity(BaseModel): pass
+
 
 # NEW/UPDATED FOR CONNECTIONS:
 class ConnectionsEntity(BaseModel): pass # NEW
@@ -727,6 +734,45 @@ class FlowSnippetDTO(BaseModel):
     remote_process_groups: Optional[List[Any]] = Field(default=None, alias="remoteProcessGroups") # Placeholder for RemoteProcessGroupEntity
     controller_services: Optional[List[ControllerServiceEntity]] = Field(default=None, alias="controllerServices")
     model_config = {"extra": "allow", "populate_by_name": True}
+
+# --- DTOs for /flow/processor-types ---
+
+class ControllerServiceApiDTO(BaseModel):
+    """Information about a Controller Service API that a component implements."""
+    type: Optional[str] = Field(None, description="The fully qualified class name of the Controller Service API.")
+    # NiFi's BundleDTO might be here too if API specifies bundle info per API
+    # bundle: Optional[BundleDTO] = Field(None) 
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class RequiredPermissionDTO(BaseModel):
+    """A required permission for a restricted component."""
+    id: Optional[str] = Field(None, description="The unique identifier for the permission.")
+    label: Optional[str] = Field(None, description="The human-readable label for the permission.")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ExplicitRestrictionDTO(BaseModel):
+    """An explicit restriction for a component."""
+    required_permission: Optional[RequiredPermissionDTO] = Field(None, alias="requiredPermission", description="The required permission.")
+    explanation: Optional[str] = Field(None, description="The explanation of why this restriction exists.")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class DocumentedTypeDTO(BaseModel):
+    """Describes a type of NiFi component (e.g., a processor type)."""
+    type: Optional[str] = Field(None, description="The fully qualified name of the type.")
+    bundle: Optional[BundleDTO] = Field(None, description="The bundle that provides this type.")
+    controller_service_apis: Optional[List[ControllerServiceApiDTO]] = Field(None, alias="controllerServiceApis", description="If this type represents a ControllerService, this lists the APIs it implements.")
+    description: Optional[str] = Field(None, description="The description of the type.")
+    usage_restriction: Optional[str] = Field(None, alias="usageRestriction", description="An optional description of why the usage of this component is restricted.")
+    deprecation_reason: Optional[str] = Field(None, alias="deprecationReason", description="If this component has been deprecated, the reason for the deprecation.")
+    tags: Optional[List[str]] = Field(None, description="The tags associated with this type.")
+    restricted: Optional[bool] = Field(None, description="Whether this type is restricted.")
+    explicit_restrictions: Optional[List[ExplicitRestrictionDTO]] = Field(None, alias="explicitRestrictions", description="An optional collection of explicit restrictions.")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ProcessorTypesEntity(BaseModel):
+    """Entity containing a list of available processor types."""
+    processor_types: Optional[List[DocumentedTypeDTO]] = Field(None, alias="processorTypes")
+    model_config = {"populate_by_name": True, "extra": "allow"}
 # ===================================================================
 # Input/Output Port Related Models
 # ... (PortDTO, PortEntity remain the same) ...
@@ -833,6 +879,13 @@ VerifyConfigRequestEntity.model_rebuild()
 ProcessorRunStatusDetailsDTO.model_rebuild()
 ProcessorsRunStatusDetailsEntity.model_rebuild()
 RunStatusDetailsRequestEntity.model_rebuild()
+
+# NEW model_rebuild calls for /flow/processor-types
+ControllerServiceApiDTO.model_rebuild()
+RequiredPermissionDTO.model_rebuild()
+ExplicitRestrictionDTO.model_rebuild()
+DocumentedTypeDTO.model_rebuild()
+ProcessorTypesEntity.model_rebuild()
 
 # NEW model_rebuild calls for Connections:
 ConnectableDTO.model_rebuild() # If ConnectableDTO references other models defined later, or if it was changed

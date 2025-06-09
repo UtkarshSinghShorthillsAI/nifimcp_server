@@ -258,6 +258,9 @@ mcp_app = FastMCP(
     lifespan=app_lifespan, # Register the global lifespan handler
 )
 
+
+
+
 # ───────────────────────────── tool registration ────────────────────────────
 def register_tools() -> None:
     """Imports tool modules and calls their registration functions."""
@@ -271,6 +274,7 @@ def register_tools() -> None:
         from .tools import connections
         from .tools import input_ports
         from .tools import output_ports
+        from .tools import flow
         logger.info("Successfully imported tool modules.")
 
         # Explicitly call registration functions
@@ -303,6 +307,11 @@ def register_tools() -> None:
             output_ports.register_output_port_tools(mcp_app)
             modules_registered.append("output_ports")
         else: logger.warning("register_output_port_tools not found in tools.output_ports")
+
+        if hasattr(flow, 'register_flow_tools'): # NEW REGISTRATION CALL
+            flow.register_flow_tools(mcp_app)
+            modules_registered.append("flow")
+        else: logger.warning("register_flow_tools not found in tools.flow")
 
         logger.info(f"Tool registration process completed for modules: {', '.join(modules_registered)}")
 

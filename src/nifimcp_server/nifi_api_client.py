@@ -38,6 +38,7 @@ from .nifi_models import (
     ConnectionStatisticsEntity,    # NEW
     ProcessGroupsEntity,           # NEW
     ProcessorsEntity,              # NEW
+    ProcessorTypesEntity, # NEW
 )
 
 # Initialize a logger for this module
@@ -533,6 +534,47 @@ class NiFiApiClient:
         if not isinstance(result, ConnectionStatisticsEntity): raise NiFiApiException(0, f"Invalid response for get_connection_statistics, expected ConnectionStatisticsEntity, got {type(result)}")
         return result
 
+    # --- Flow Endpoints ---
+
+    async def get_available_processor_types( # NEW METHOD
+        self,
+        bundle_group_filter: Optional[str] = None,
+        bundle_artifact_filter: Optional[str] = None,
+        type_filter: Optional[str] = None
+    ) -> Optional[ProcessorTypesEntity]:
+        """
+        Retrieves the types of processors that this NiFi supports.
+        Corresponds to GET /flow/processor-types.
+        """
+        path = "flow/processor-types"
+        params: Dict[str, Any] = {}
+        if bundle_group_filter:
+            params["bundleGroupFilter"] = bundle_group_filter
+        if bundle_artifact_filter:
+            params["bundleArtifactFilter"] = bundle_artifact_filter
+        if type_filter:
+            params["type"] = type_filter # API doc calls this 'type'
+
+        nifi_client_logger.debug(f"Attempting GET {path} with params {params if params else 'None'}")
+        
+        result = await self._make_request(
+            method="GET",
+            path=path,
+            params=params if params else None,
+            response_model=ProcessorTypesEntity,
+            allow_404=False # An empty list is a valid 200, not typically a 404
+        )
+        
+        if result is None: # Should only happen if _make_request itself returns None for non-404 (e.g. 204, or parse error)
+            nifi_client_logger.warning(f"Received null response for processor types, params: {params}")
+            return None # Or ProcessorTypesEntity(processorTypes=[]) if preferred for consistency
+            
+        if not isinstance(result, ProcessorTypesEntity):
+            raise NiFiApiException(0, f"Invalid response for get_available_processor_types, expected ProcessorTypesEntity, got {type(result)}")
+        
+        nifi_client_logger.info(f"Successfully retrieved available processor types with {len(result.processor_types) if result.processor_types else 0} items.")
+        return result
+    
     # --- Input Port methods (Section 3.5) ---
     async def get_input_port(self, port_id: str) -> Optional[PortEntity]:
         nifi_client_logger.warning("get_input_port is a stub and not yet implemented.")
