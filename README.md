@@ -38,3 +38,25 @@ npx @modelcontextprotocol/inspector \
   -e NIFI_MCP_USERNAME="your_nifi_user" \
   -e NIFI_MCP_PASSWORD="your_nifi_password" \
   python3 -m src.nifimcp_server.app
+```
+
+### MCP Server Config file
+```
+"mcpServers": {
+    "nifi": {
+      "command": "which uv to find out command",
+      "args": [
+        "--directory",
+        "/Users/shtlpmac008/Developer/nifimcp_server",
+        "run",
+        "-m",
+        "src.nifimcp_server.app"
+      ],
+      "env": {
+        "NIFI_MCP_USERNAME": "YOUR USERNAME",
+        "NIFI_MCP_PASSWORD": "YOUR PASSWORD",
+        "NIFI_MCP_SSL_VERIFY": "false"
+      }
+    }
+}
+```
