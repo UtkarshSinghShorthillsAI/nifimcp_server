@@ -275,6 +275,7 @@ def register_tools() -> None:
         from .tools import input_ports
         from .tools import output_ports
         from .tools import flow
+        from .tools import controller_services # NEW IMPORT
         logger.info("Successfully imported tool modules.")
 
         # Explicitly call registration functions
@@ -308,10 +309,16 @@ def register_tools() -> None:
             modules_registered.append("output_ports")
         else: logger.warning("register_output_port_tools not found in tools.output_ports")
 
-        if hasattr(flow, 'register_flow_tools'): # NEW REGISTRATION CALL
+        if hasattr(flow, 'register_flow_tools'):
             flow.register_flow_tools(mcp_app)
             modules_registered.append("flow")
         else: logger.warning("register_flow_tools not found in tools.flow")
+
+        # NEW REGISTRATION CALL
+        if hasattr(controller_services, 'register_controller_service_tools'):
+            controller_services.register_controller_service_tools(mcp_app)
+            modules_registered.append("controller_services")
+        else: logger.warning("register_controller_service_tools not found in tools.controller_services")
 
         logger.info(f"Tool registration process completed for modules: {', '.join(modules_registered)}")
 

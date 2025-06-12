@@ -95,6 +95,15 @@ class StatusHistoryEntity(BaseModel): pass # NEW (placeholder for now)
 class ConnectionStatisticsDTO(BaseModel): pass # NEW
 class ConnectionStatisticsEntity(BaseModel): pass # NEW
 
+# NEW FOR CONTROLLER SERVICES
+class ControllerServiceDTO(BaseModel): pass
+class ControllerServiceReferencingComponentEntity(BaseModel): pass
+class ControllerServiceReferencingComponentsEntity(BaseModel): pass
+class ControllerServiceRunStatusEntity(BaseModel): pass
+class ControllerServicesEntity(BaseModel): pass
+class ControllerServiceTypesEntity(BaseModel): pass
+class ControllerServiceStatusDTO(BaseModel): pass
+
 # ===================================================================
 # Common/Core DTO Definitions
 # ===================================================================
@@ -146,11 +155,6 @@ class BulletinEntity(BaseModel):
     """Placeholder for BulletinEntity"""
     id: Optional[int] = Field(None)
     message: Optional[str] = Field(None)
-    model_config = {"extra": "allow"}
-
-class ControllerServiceEntity(BaseModel):
-    """Placeholder for ControllerServiceEntity"""
-    id: Optional[str] = Field(None)
     model_config = {"extra": "allow"}
 
 class ParameterContextReferenceEntity(BaseModel):
@@ -811,6 +815,87 @@ class PortEntity(BaseModel):
     model_config = {"populate_by_name": True, "extra": "allow"}
 
 # ===================================================================
+# Controller Service Related Models (NEW SECTION)
+# ===================================================================
+class ControllerServiceStatusDTO(BaseModel):
+    """The status of a controller service."""
+    run_status: Optional[str] = Field(None, alias="runStatus", description="The run status of the controller service (e.g., 'ENABLED', 'DISABLED').")
+    active_thread_count: Optional[int] = Field(None, alias="activeThreadCount", description="The number of active threads for the controller service.")
+    validation_status: Optional[str] = Field(None, alias="validationStatus", description="The validation status of the controller service (e.g., 'VALID', 'INVALID').")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ControllerServiceDTO(BaseModel):
+    """The configuration details for a Controller Service."""
+    id: Optional[str] = Field(None, description="The id of the component.")
+    versioned_component_id: Optional[str] = Field(None, alias="versionedComponentId")
+    parent_group_id: Optional[str] = Field(None, alias="parentGroupId")
+    name: Optional[str] = Field(None, description="The name of the controller service.")
+    type: Optional[str] = Field(None, description="The type of the controller service (fully qualified class name).")
+    bundle: Optional[BundleDTO] = Field(None, description="The bundle for the controller service.")
+    comments: Optional[str] = Field(None, description="The comments for the controller service.")
+    state: Optional[str] = Field(None, description="The state of the controller service (e.g., 'ENABLED', 'DISABLED', 'ENABLING', 'DISABLING').")
+    persists_state: Optional[bool] = Field(None, alias="persistsState")
+    restricted: Optional[bool] = Field(None)
+    deprecated: Optional[bool] = Field(None)
+    extension_missing: Optional[bool] = Field(None, alias="extensionMissing")
+    multiple_versions_available: Optional[bool] = Field(None, alias="multipleVersionsAvailable")
+    properties: Optional[Dict[str, Optional[str]]] = Field(None, description="The properties of the controller service.")
+    descriptors: Optional[Dict[str, PropertyDescriptorDTO]] = Field(None, description="The descriptors for the controller service properties.")
+    validation_errors: Optional[List[str]] = Field(None, alias="validationErrors")
+    validation_status: Optional[str] = Field(None, alias="validationStatus")
+    bulletin_level: Optional[str] = Field(None, alias="bulletinLevel")
+    annotation_data: Optional[str] = Field(None, alias="annotationData")
+    referencing_components: Optional[List[ControllerServiceReferencingComponentEntity]] = Field(None, alias="referencingComponents")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ControllerServiceEntity(BaseModel):
+    """An entity representing a Controller Service."""
+    revision: Optional[RevisionDTO] = Field(None)
+    id: Optional[str] = Field(None)
+    uri: Optional[HttpUrl] = Field(None)
+    position: Optional[PositionDTO] = Field(None)
+    permissions: Optional[PermissionDTO] = Field(None)
+    bulletins: Optional[List[BulletinEntity]] = Field(None)
+    disconnected_node_acknowledged: Optional[bool] = Field(None, alias="disconnectedNodeAcknowledged")
+    parent_group_id: Optional[str] = Field(None, alias="parentGroupId")
+    component: Optional[ControllerServiceDTO] = Field(None)
+    status: Optional[ControllerServiceStatusDTO] = Field(None)
+    operate_permissions: Optional[PermissionDTO] = Field(None, alias="operatePermissions")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ControllerServiceReferencingComponentEntity(BaseModel):
+    """An entity representing a component that references a controller service."""
+    revision: Optional[RevisionDTO] = Field(None)
+    id: Optional[str] = Field(None)
+    permissions: Optional[PermissionDTO] = Field(None)
+    component: Optional[Dict[str, Any]] = Field(None, description="A generic component DTO (Processor, Controller Service, etc.).")
+    operate_permissions: Optional[PermissionDTO] = Field(None, alias="operatePermissions")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ControllerServiceReferencingComponentsEntity(BaseModel):
+    """A list of components that reference a controller service."""
+    controller_service_referencing_components: Optional[List[ControllerServiceReferencingComponentEntity]] = Field(None, alias="controllerServiceReferencingComponents")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ControllerServiceRunStatusEntity(BaseModel):
+    """Payload for updating the run status of a controller service."""
+    revision: RevisionDTO = Field(description="The revision for this request.")
+    state: str = Field(description="The desired state of the controller service ('ENABLED' or 'DISABLED').")
+    disconnected_node_acknowledged: Optional[bool] = Field(False, alias="disconnectedNodeAcknowledged")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ControllerServicesEntity(BaseModel):
+    """Entity for a list of controller services."""
+    controller_services: Optional[List[ControllerServiceEntity]] = Field(None, alias="controllerServices")
+    current_time: Optional[str] = Field(None, alias="currentTime")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+class ControllerServiceTypesEntity(BaseModel):
+    """Entity containing a list of available controller service types."""
+    controller_service_types: Optional[List[DocumentedTypeDTO]] = Field(None, alias="controllerServiceTypes")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+# ===================================================================
 # Generic Models for NiFi Client
 # ... (NiFiClientCreds, NiFiAuthException, NiFiApiException remain the same) ...
 # ===================================================================
@@ -855,11 +940,11 @@ VersionedFlowSnapshotDTO.model_rebuild()
 ProcessorConfigDTO.model_rebuild()
 ProcessorDTO.model_rebuild()
 # ConnectionDTO.model_rebuild()
-# PortDTO.model_rebuild()
+PortDTO.model_rebuild()
 ProcessGroupEntity.model_rebuild()
 ProcessorEntity.model_rebuild()
 # ConnectionEntity.model_rebuild()
-# PortEntity.model_rebuild()
+PortEntity.model_rebuild()
 
 # NEW/UPDATED model_rebuild calls for processors:
 ProcessorStatusDTO.model_rebuild()
@@ -904,3 +989,13 @@ ConnectionsEntity.model_rebuild()
 ProcessGroupsEntity.model_rebuild()   # NEW
 ProcessorsEntity.model_rebuild()      # NEW
 ProcessGroupContentOverviewDTO.model_rebuild() # NEW
+
+# NEW model_rebuild calls for Controller Services
+ControllerServiceStatusDTO.model_rebuild()
+ControllerServiceDTO.model_rebuild()
+ControllerServiceReferencingComponentEntity.model_rebuild()
+ControllerServiceReferencingComponentsEntity.model_rebuild()
+ControllerServiceRunStatusEntity.model_rebuild()
+ControllerServiceEntity.model_rebuild()
+ControllerServicesEntity.model_rebuild()
+ControllerServiceTypesEntity.model_rebuild()
