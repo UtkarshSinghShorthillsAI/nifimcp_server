@@ -39,6 +39,11 @@ from .nifi_models import (
     ProcessGroupsEntity,           # NEW
     ProcessorsEntity,              # NEW
     ProcessorTypesEntity, # NEW
+    # NEW FOR CONTROLLER SERVICES
+    ControllerServiceEntity,
+    ControllerServicesEntity,
+    ControllerServiceRunStatusEntity,
+    ControllerServiceTypesEntity,
 )
 
 # Initialize a logger for this module
@@ -575,6 +580,72 @@ class NiFiApiClient:
         nifi_client_logger.info(f"Successfully retrieved available processor types with {len(result.processor_types) if result.processor_types else 0} items.")
         return result
     
+    # --- Controller Service methods (NEW SECTION) ---
+    async def get_available_controller_service_types(
+        self,
+        bundle_group_filter: Optional[str] = None,
+        bundle_artifact_filter: Optional[str] = None,
+        type_filter: Optional[str] = None
+    ) -> Optional[ControllerServiceTypesEntity]:
+        """Retrieves the types of controller services that this NiFi supports."""
+        path = "flow/controller-service-types"
+        params: Dict[str, Any] = {}
+        if bundle_group_filter: params["bundleGroupFilter"] = bundle_group_filter
+        if bundle_artifact_filter: params["bundleArtifactFilter"] = bundle_artifact_filter
+        if type_filter: params["type"] = type_filter
+        
+        result = await self._make_request(method="GET", path=path, params=params if params else None, response_model=ControllerServiceTypesEntity)
+        if result is None: return None
+        if not isinstance(result, ControllerServiceTypesEntity): raise NiFiApiException(0, "Invalid response for get_available_controller_service_types")
+        return result
+
+    async def get_controller_services_in_group(self, process_group_id: str) -> Optional[ControllerServicesEntity]:
+        """Gets all controller services within a specified process group."""
+        path = f"process-groups/{process_group_id}/controller-services"
+        result = await self._make_request(method="GET", path=path, response_model=ControllerServicesEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, ControllerServicesEntity): raise NiFiApiException(0, "Invalid response for get_controller_services_in_group")
+        return result
+
+    async def create_controller_service(self, parent_group_id: str, payload: ControllerServiceEntity) -> ControllerServiceEntity:
+        """Creates a new controller service."""
+        path = f"process-groups/{parent_group_id}/controller-services"
+        result = await self._make_request(method="POST", path=path, json_body=payload, response_model=ControllerServiceEntity)
+        if not isinstance(result, ControllerServiceEntity): raise NiFiApiException(0, "Failed to create controller service or parse response.")
+        return result
+
+    async def get_controller_service(self, service_id: str) -> Optional[ControllerServiceEntity]:
+        """Gets a controller service by its ID."""
+        path = f"controller-services/{service_id}"
+        result = await self._make_request(method="GET", path=path, response_model=ControllerServiceEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, ControllerServiceEntity): raise NiFiApiException(0, "Invalid response for get_controller_service")
+        return result
+
+    async def update_controller_service(self, service_id: str, payload: ControllerServiceEntity) -> ControllerServiceEntity:
+        """Updates an existing controller service."""
+        path = f"controller-services/{service_id}"
+        result = await self._make_request(method="PUT", path=path, json_body=payload, response_model=ControllerServiceEntity)
+        if not isinstance(result, ControllerServiceEntity): raise NiFiApiException(0, "Failed to update controller service or parse response.")
+        return result
+
+    async def delete_controller_service(self, service_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> ControllerServiceEntity:
+        """Deletes a controller service."""
+        path = f"controller-services/{service_id}"
+        params: Dict[str, Any] = {"version": version}
+        if client_id: params["clientId"] = client_id
+        params["disconnectedNodeAcknowledged"] = str(disconnected_node_acknowledged).lower()
+        result = await self._make_request(method="DELETE", path=path, params=params, response_model=ControllerServiceEntity)
+        if not isinstance(result, ControllerServiceEntity): raise NiFiApiException(0, "Failed to delete controller service or parse response.")
+        return result
+
+    async def update_controller_service_run_status(self, service_id: str, payload: ControllerServiceRunStatusEntity) -> ControllerServiceEntity:
+        """Updates the run status of a controller service (enable/disable)."""
+        path = f"controller-services/{service_id}/run-status"
+        result = await self._make_request(method="PUT", path=path, json_body=payload, response_model=ControllerServiceEntity)
+        if not isinstance(result, ControllerServiceEntity): raise NiFiApiException(0, "Failed to update controller service run status or parse response.")
+        return result
+
     # --- Input Port methods (Section 3.5) ---
     async def get_input_port(self, port_id: str) -> Optional[PortEntity]:
         nifi_client_logger.warning("get_input_port is a stub and not yet implemented.")
