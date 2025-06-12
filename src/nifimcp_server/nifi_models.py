@@ -940,11 +940,11 @@ VersionedFlowSnapshotDTO.model_rebuild()
 ProcessorConfigDTO.model_rebuild()
 ProcessorDTO.model_rebuild()
 # ConnectionDTO.model_rebuild()
-# PortDTO.model_rebuild()
+PortDTO.model_rebuild()
 ProcessGroupEntity.model_rebuild()
 ProcessorEntity.model_rebuild()
 # ConnectionEntity.model_rebuild()
-# PortEntity.model_rebuild()
+PortEntity.model_rebuild()
 
 # NEW/UPDATED model_rebuild calls for processors:
 ProcessorStatusDTO.model_rebuild()

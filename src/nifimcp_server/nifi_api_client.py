@@ -648,31 +648,78 @@ class NiFiApiClient:
 
     # --- Input Port methods (Section 3.5) ---
     async def get_input_port(self, port_id: str) -> Optional[PortEntity]:
-        nifi_client_logger.warning("get_input_port is a stub and not yet implemented.")
-        return None
-    async def create_input_port(self, group_id: str, port_entity: PortEntity) -> Optional[PortEntity]:
-        nifi_client_logger.warning("create_input_port is a stub and not yet implemented.")
-        return None
-    async def update_input_port(self, port_id: str, port_entity: PortEntity) -> Optional[PortEntity]:
-        nifi_client_logger.warning("update_input_port is a stub and not yet implemented.")
-        return None
-    async def delete_input_port(self, port_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> Optional[PortEntity]:
-        nifi_client_logger.warning("delete_input_port is a stub and not yet implemented.")
-        return None
+        """Gets an input port by its ID."""
+        path = f"input-ports/{port_id}"
+        nifi_client_logger.debug(f"Attempting GET {path}")
+        result = await self._make_request(method="GET", path=path, response_model=PortEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, PortEntity): raise NiFiApiException(0, f"Invalid response for get_input_port, expected PortEntity, got {type(result)}")
+        return result
+
+    async def create_input_port(self, group_id: str, port_entity: PortEntity) -> PortEntity:
+        """Creates a new input port within a specified process group."""
+        path = f"process-groups/{group_id}/input-ports"
+        nifi_client_logger.debug(f"Attempting POST {path} to create input port in group {group_id}")
+        result = await self._make_request(method="POST", path=path, json_body=port_entity, response_model=PortEntity)
+        if not isinstance(result, PortEntity): raise NiFiApiException(0, "Failed to create input port or parse response correctly.")
+        return result
+
+    async def update_input_port(self, port_id: str, port_entity: PortEntity) -> PortEntity:
+        """Updates an existing input port."""
+        path = f"input-ports/{port_id}"
+        nifi_client_logger.debug(f"Attempting PUT {path} for input port {port_id}")
+        result = await self._make_request(method="PUT", path=path, json_body=port_entity, response_model=PortEntity)
+        if not isinstance(result, PortEntity): raise NiFiApiException(0, "Failed to update input port or parse response correctly.")
+        return result
+
+    async def delete_input_port(self, port_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> PortEntity:
+        """Deletes an input port."""
+        path = f"input-ports/{port_id}"
+        params: Dict[str, Any] = {"version": version}
+        if client_id: params["clientId"] = client_id
+        params["disconnectedNodeAcknowledged"] = str(disconnected_node_acknowledged).lower()
+        nifi_client_logger.debug(f"Attempting DELETE {path} with params {params}")
+        result = await self._make_request(method="DELETE", path=path, params=params, response_model=PortEntity)
+        if not isinstance(result, PortEntity): raise NiFiApiException(0, "Failed to delete input port or parse response correctly.")
+        return result
 
     # --- Output Port methods (Section 3.6) ---
     async def get_output_port(self, port_id: str) -> Optional[PortEntity]:
-        nifi_client_logger.warning("get_output_port is a stub and not yet implemented.")
-        return None
-    async def create_output_port(self, group_id: str, port_entity: PortEntity) -> Optional[PortEntity]:
-        nifi_client_logger.warning("create_output_port is a stub and not yet implemented.")
-        return None
-    async def update_output_port(self, port_id: str, port_entity: PortEntity) -> Optional[PortEntity]:
-        nifi_client_logger.warning("update_output_port is a stub and not yet implemented.")
-        return None
-    async def delete_output_port(self, port_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> Optional[PortEntity]:
-        nifi_client_logger.warning("delete_output_port is a stub and not yet implemented.")
-        return None
+        """Gets an output port by its ID."""
+        path = f"output-ports/{port_id}"
+        nifi_client_logger.debug(f"Attempting GET {path}")
+        result = await self._make_request(method="GET", path=path, response_model=PortEntity, allow_404=True)
+        if result is None: return None
+        if not isinstance(result, PortEntity): raise NiFiApiException(0, f"Invalid response for get_output_port, expected PortEntity, got {type(result)}")
+        return result
+
+    async def create_output_port(self, group_id: str, port_entity: PortEntity) -> PortEntity:
+        """Creates a new output port within a specified process group."""
+        path = f"process-groups/{group_id}/output-ports"
+        nifi_client_logger.debug(f"Attempting POST {path} to create output port in group {group_id}")
+        result = await self._make_request(method="POST", path=path, json_body=port_entity, response_model=PortEntity)
+        if not isinstance(result, PortEntity): raise NiFiApiException(0, "Failed to create output port or parse response correctly.")
+        return result
+
+    async def update_output_port(self, port_id: str, port_entity: PortEntity) -> PortEntity:
+        """Updates an existing output port."""
+        path = f"output-ports/{port_id}"
+        nifi_client_logger.debug(f"Attempting PUT {path} for output port {port_id}")
+        result = await self._make_request(method="PUT", path=path, json_body=port_entity, response_model=PortEntity)
+        if not isinstance(result, PortEntity): raise NiFiApiException(0, "Failed to update output port or parse response correctly.")
+        return result
+
+    async def delete_output_port(self, port_id: str, version: str, client_id: Optional[str] = None, disconnected_node_acknowledged: bool = False) -> PortEntity:
+        """Deletes an output port."""
+        path = f"output-ports/{port_id}"
+        params: Dict[str, Any] = {"version": version}
+        if client_id: params["clientId"] = client_id
+        params["disconnectedNodeAcknowledged"] = str(disconnected_node_acknowledged).lower()
+        nifi_client_logger.debug(f"Attempting DELETE {path} with params {params}")
+        result = await self._make_request(method="DELETE", path=path, params=params, response_model=PortEntity)
+        if not isinstance(result, PortEntity): raise NiFiApiException(0, "Failed to delete output port or parse response correctly.")
+        return result
+
 
     # Stubs for other /processors endpoints (to be implemented later)
     async def analyze_processor_configuration(self, processor_id: str, config_analysis_entity: ConfigurationAnalysisEntity) -> Optional[ConfigurationAnalysisEntity]:
