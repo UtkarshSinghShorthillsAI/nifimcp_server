@@ -249,7 +249,7 @@ async def cleanup_nifi_client_for_session(ctx: Context):
 # ─────────────────────────── FastMCP application ────────────────────────────
 mcp_app = FastMCP(
     name="NiFiMCP Server",
-    version="1.0", # Consider making dynamic later
+    # version="1.0", # Consider making dynamic later
     instructions=(
         "This server exposes tools that wrap Apache NiFi’s REST API so that an "
         "LLM client can create, query, and modify data-flow components."
