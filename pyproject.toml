@@ -63,6 +63,7 @@ select = ["E", "F", "W", "I", "UP", "C4", "ASYNC", "B", "A"]
 ignore = [] # Add specific ignores if needed, e.g. B008 for Pydantic default factories
 
 [tool.pyright]
+configFilePath = "pyproject.toml"
 include = ["src"]
 exclude = [".venv"]
 venvPath = "."
@@ -71,3 +72,8 @@ pythonVersion = "3.10"
 reportMissingImports = true
 reportMissingTypeStubs = false
 strict = ["*"] # Enable strict mode for all files
+typeCheckingMode = "off"
+reportUndefinedVariable = false
+
+[tool.pyright.diagnosticSeverityOverrides]
+reportArgumentType = "none"

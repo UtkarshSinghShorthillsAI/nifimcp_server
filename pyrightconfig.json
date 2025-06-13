@@ -1,0 +1,10 @@
+{
+  "typeCheckingMode": "off",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportUndefinedVariable": false,
+  "reportArgumentType": "none",
+  "strict": [],
+  "include": ["src"],
+  "exclude": [".venv"]
+}

@@ -200,7 +200,7 @@ class NiFiApiClient:
         json_payload: Optional[Dict[str, Any]] = None
         if json_body:
             if isinstance(json_body, BaseModel):
-                json_payload = json_body.model_dump(by_alias=True, exclude_none=True)
+                json_payload = json_body.model_dump(mode="json",by_alias=True, exclude_none=True)
             else:
                 json_payload = json_body
             headers["Content-Type"] = "application/json"
